@@ -22,7 +22,7 @@ export default function RiderTrip() {
       const response = await fetch(`/api/rides/${rideId}`);
       return response.json();
     },
-    refetchInterval: ride?.status === 'in_progress' ? 5000 : false,
+    refetchInterval: 5000,
   });
 
   const cancelRideMutation = useMutation({
