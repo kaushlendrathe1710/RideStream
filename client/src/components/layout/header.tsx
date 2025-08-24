@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Menu, User } from "lucide-react";
+import { Menu, User, LogOut, LogIn } from "lucide-react";
 import { useLocation } from "wouter";
 
 interface HeaderProps {
@@ -9,7 +9,19 @@ interface HeaderProps {
 }
 
 export function Header({ title, mode, onModeSwitch }: HeaderProps) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  
+  // Check if user is logged in
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  
+  const handleLogout = () => {
+    localStorage.removeItem('user');
+    setLocation('/login');
+  };
+  
+  const handleLogin = () => {
+    setLocation('/login');
+  };
   
   return (
     <header className="bg-white shadow-sm px-4 py-3 flex items-center justify-between relative z-20" data-testid="header">
@@ -36,9 +48,30 @@ export function Header({ title, mode, onModeSwitch }: HeaderProps) {
         >
           Switch to {mode === "rider" ? "Driver" : mode === "driver" ? "Admin" : "Rider"}
         </Button>
-        <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center" data-testid="user-avatar">
-          <User className="h-4 w-4 text-gray-600" />
-        </div>
+        {user ? (
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">{user.name}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="p-2"
+              data-testid="logout-button"
+            >
+              <LogOut className="h-4 w-4 text-gray-600" />
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogin}
+            className="p-2"
+            data-testid="login-button"
+          >
+            <LogIn className="h-4 w-4 text-gray-600" />
+          </Button>
+        )}
       </div>
     </header>
   );
