@@ -11,10 +11,12 @@ import DriverDashboard from "@/pages/driver/dashboard";
 import DriverRideRequest from "@/pages/driver/ride-request";
 import DriverTrip from "@/pages/driver/trip";
 import AdminDashboard from "@/pages/admin/dashboard";
+import LoginPage from "@/pages/auth/login";
 
 function Router() {
   return (
     <Switch>
+      <Route path="/login" component={LoginPage} />
       <Route path="/" component={RiderHome} />
       <Route path="/rider" component={RiderHome} />
       <Route path="/rider/booking" component={RiderBooking} />

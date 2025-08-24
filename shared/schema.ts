@@ -28,6 +28,15 @@ export const drivers = pgTable("drivers", {
   totalEarnings: decimal("total_earnings", { precision: 10, scale: 2 }).default("0.00"),
 });
 
+export const otpCodes = pgTable("otp_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  code: text("code").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  verified: boolean("verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const rides = pgTable("rides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   riderId: varchar("rider_id").references(() => users.id).notNull(),
@@ -65,12 +74,20 @@ export const insertRideSchema = createInsertSchema(rides).omit({
   completedAt: true,
 });
 
+export const insertOtpSchema = createInsertSchema(otpCodes).omit({
+  id: true,
+  createdAt: true,
+  verified: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertDriver = z.infer<typeof insertDriverSchema>;
 export type Driver = typeof drivers.$inferSelect;
 export type InsertRide = z.infer<typeof insertRideSchema>;
 export type Ride = typeof rides.$inferSelect;
+export type InsertOtp = z.infer<typeof insertOtpSchema>;
+export type OtpCode = typeof otpCodes.$inferSelect;
 
 export type DriverWithUser = Driver & { user: User };
 export type RideWithDetails = Ride & { 

@@ -1,10 +1,11 @@
-import { type User, type InsertUser, type Driver, type InsertDriver, type Ride, type InsertRide, type DriverWithUser, type RideWithDetails, users, drivers, rides } from "@shared/schema";
+import { type User, type InsertUser, type Driver, type InsertDriver, type Ride, type InsertRide, type DriverWithUser, type RideWithDetails, type OtpCode, type InsertOtp, users, drivers, rides, otpCodes } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 
 export interface IStorage {
   // Users
+  getAllUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
@@ -12,6 +13,7 @@ export interface IStorage {
   updateUser(id: string, user: Partial<User>): Promise<User | undefined>;
 
   // Drivers
+  getAllDrivers(): Promise<DriverWithUser[]>;
   getDriver(id: string): Promise<Driver | undefined>;
   getDriverByUserId(userId: string): Promise<Driver | undefined>;
   createDriver(driver: InsertDriver): Promise<Driver>;
@@ -29,6 +31,12 @@ export interface IStorage {
   getActiveRideForRider(riderId: string): Promise<RideWithDetails | undefined>;
   getActiveRideForDriver(driverId: string): Promise<RideWithDetails | undefined>;
   getPendingRideRequests(): Promise<RideWithDetails[]>;
+
+  // OTP methods
+  createOtp(otp: InsertOtp): Promise<OtpCode>;
+  getOtp(email: string, code: string): Promise<OtpCode | undefined>;
+  markOtpAsVerified(id: string): Promise<boolean>;
+  cleanupExpiredOtps(): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -125,6 +133,10 @@ export class MemStorage implements IStorage {
     this.drivers.set(driver2.id, driver2);
   }
 
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
   }
@@ -158,6 +170,19 @@ export class MemStorage implements IStorage {
     const updatedUser = { ...user, ...updateData };
     this.users.set(id, updatedUser);
     return updatedUser;
+  }
+
+  async getAllDrivers(): Promise<DriverWithUser[]> {
+    const allDrivers = Array.from(this.drivers.values());
+    return Promise.all(
+      allDrivers.map(async (driver) => {
+        const user = await this.getUser(driver.userId);
+        if (!user) {
+          throw new Error(`User not found for driver ${driver.id}`);
+        }
+        return { ...driver, user };
+      })
+    );
   }
 
   async getDriver(id: string): Promise<Driver | undefined> {
@@ -335,10 +360,61 @@ export class MemStorage implements IStorage {
     
     return ridesWithDetails;
   }
+
+  // OTP methods
+  async createOtp(insertOtp: InsertOtp): Promise<OtpCode> {
+    const id = randomUUID();
+    const otp: OtpCode = {
+      ...insertOtp,
+      id,
+      verified: false,
+      createdAt: new Date(),
+    };
+    // For MemStorage, store in a simple map (temporary implementation)
+    return otp;
+  }
+
+  async getOtp(email: string, code: string): Promise<OtpCode | undefined> {
+    // Temporary implementation for MemStorage
+    return undefined;
+  }
+
+  async markOtpAsVerified(id: string): Promise<boolean> {
+    // Temporary implementation for MemStorage
+    return true;
+  }
+
+  async cleanupExpiredOtps(): Promise<void> {
+    // Temporary implementation for MemStorage
+  }
 }
 
 // DatabaseStorage implementation using PostgreSQL
 export class DatabaseStorage implements IStorage {
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async getAllDrivers(): Promise<DriverWithUser[]> {
+    const result = await db.select({
+      id: drivers.id,
+      userId: drivers.userId,
+      vehicleType: drivers.vehicleType,
+      vehicleModel: drivers.vehicleModel,
+      vehicleNumber: drivers.vehicleNumber,
+      licenseNumber: drivers.licenseNumber,
+      isOnline: drivers.isOnline,
+      currentLat: drivers.currentLat,
+      currentLng: drivers.currentLng,
+      totalEarnings: drivers.totalEarnings,
+      user: users,
+    })
+    .from(drivers)
+    .leftJoin(users, eq(drivers.userId, users.id));
+    
+    return result.filter(item => item.user !== null) as DriverWithUser[];
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -591,6 +667,44 @@ export class DatabaseStorage implements IStorage {
     }
     
     return ridesWithDetails;
+  }
+
+  // OTP methods for DatabaseStorage
+  async createOtp(insertOtp: InsertOtp): Promise<OtpCode> {
+    const [otp] = await db
+      .insert(otpCodes)
+      .values(insertOtp)
+      .returning();
+    return otp;
+  }
+
+  async getOtp(email: string, code: string): Promise<OtpCode | undefined> {
+    const [otp] = await db
+      .select()
+      .from(otpCodes)
+      .where(eq(otpCodes.email, email));
+    
+    // Check if OTP matches and is not expired
+    if (otp && otp.code === code && !otp.verified && new Date() <= otp.expiresAt) {
+      return otp;
+    }
+    
+    return undefined;
+  }
+
+  async markOtpAsVerified(id: string): Promise<boolean> {
+    await db
+      .update(otpCodes)
+      .set({ verified: true })
+      .where(eq(otpCodes.id, id));
+    
+    return true;
+  }
+
+  async cleanupExpiredOtps(): Promise<void> {
+    await db
+      .delete(otpCodes)
+      .where(eq(otpCodes.verified, true));
   }
 }
 
