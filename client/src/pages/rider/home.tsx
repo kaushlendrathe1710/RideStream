@@ -75,14 +75,45 @@ export default function RiderHome() {
     setDropoffAddress(location.address);
     setShowLocationSearch(false);
     setTimeout(() => {
-      setLocation("/rider/booking");
+      proceedToBooking(location.address, location.lat, location.lng);
     }, 500);
   };
 
   const handleManualDestination = () => {
     if (dropoffAddress.trim()) {
-      setLocation("/rider/booking");
+      // For manual destinations, use geolocation or default coordinates
+      proceedToBooking(dropoffAddress, 28.6149, 77.2085); // Default to Delhi coordinates
     }
+  };
+
+  const proceedToBooking = (destination: string, destLat?: number, destLng?: number) => {
+    if (!geolocation.latitude || !geolocation.longitude) {
+      toast({
+        title: "Location required",
+        description: "Please enable location access to book a ride.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Prepare trip data for booking page
+    const tripData = {
+      pickup: {
+        lat: geolocation.latitude,
+        lng: geolocation.longitude,
+        address: pickupAddress
+      },
+      dropoff: {
+        lat: destLat || 28.6149,
+        lng: destLng || 77.2085,
+        address: destination
+      }
+    };
+
+    // Store trip data in localStorage for booking page
+    localStorage.setItem('tripData', JSON.stringify(tripData));
+    
+    setLocation("/rider/booking");
   };
 
   const handleGetCurrentLocation = () => {
@@ -294,6 +325,7 @@ export default function RiderHome() {
                     onClick={() => {
                       setDropoffAddress(ride.dropoffAddress);
                       setShowRecentRides(false);
+                      proceedToBooking(ride.dropoffAddress, parseFloat(ride.dropoffLat), parseFloat(ride.dropoffLng));
                     }}
                     data-testid={`recent-ride-${ride.id}`}
                   >
