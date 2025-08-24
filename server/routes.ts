@@ -100,6 +100,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Login with password
+  app.post("/api/auth/login-password", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+      }
+
+      const result = await authService.loginWithPassword(email, password);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: result.message, 
+          user: result.user
+        });
+      } else {
+        res.status(400).json({ success: false, message: result.message });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, message: "Internal server error" });
+    }
+  });
+
+  // Update password
+  app.post("/api/auth/update-password", async (req, res) => {
+    try {
+      const { userId, currentPassword, newPassword } = req.body;
+      if (!userId || !newPassword) {
+        return res.status(400).json({ message: "User ID and new password are required" });
+      }
+
+      const result = await authService.updatePassword(userId, currentPassword, newPassword);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          message: result.message
+        });
+      } else {
+        res.status(400).json({ success: false, message: result.message });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, message: "Internal server error" });
+    }
+  });
+
   // Driver routes
   app.get("/api/drivers", async (req, res) => {
     try {

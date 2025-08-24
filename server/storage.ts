@@ -11,6 +11,7 @@ export interface IStorage {
   getUserByPhone(phone: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<User>): Promise<User | undefined>;
+  updateUserPassword(userId: string, hashedPassword: string): Promise<void>;
 
   // Drivers
   getAllDrivers(): Promise<DriverWithUser[]>;
@@ -63,6 +64,7 @@ export class MemStorage implements IStorage {
       name: "Priya Singh",
       email: "priya@example.com",
       phone: "+91-9876543210",
+      password: null, // No password set initially
       type: "rider",
       profilePicture: null,
       rating: "4.9",
@@ -75,6 +77,7 @@ export class MemStorage implements IStorage {
       name: "Amit Kumar",
       email: "amit@example.com",
       phone: "+91-9876543211",
+      password: null, // No password set initially
       type: "rider",
       profilePicture: null,
       rating: "4.7",
@@ -88,6 +91,7 @@ export class MemStorage implements IStorage {
       name: "Rajesh Kumar",
       email: "rajesh@example.com",
       phone: "+91-9876543212",
+      password: null, // No password set initially
       type: "driver",
       profilePicture: null,
       rating: "4.8",
@@ -100,6 +104,7 @@ export class MemStorage implements IStorage {
       name: "Suresh Sharma",
       email: "suresh@example.com",
       phone: "+91-9876543213",
+      password: null, // No password set initially
       type: "driver",
       profilePicture: null,
       rating: "4.6",
@@ -178,6 +183,14 @@ export class MemStorage implements IStorage {
     const updatedUser = { ...user, ...updateData };
     this.users.set(id, updatedUser);
     return updatedUser;
+  }
+
+  async updateUserPassword(userId: string, hashedPassword: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      const updatedUser = { ...user, password: hashedPassword };
+      this.users.set(userId, updatedUser);
+    }
   }
 
   async getAllDrivers(): Promise<DriverWithUser[]> {
@@ -540,6 +553,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async updateUserPassword(userId: string, hashedPassword: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ password: hashedPassword })
+      .where(eq(users.id, userId));
   }
 
   async getDriver(id: string): Promise<Driver | undefined> {
