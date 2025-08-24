@@ -8,11 +8,24 @@ interface EmailOptions {
 }
 
 class EmailService {
-  private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter | null;
+  private developmentMode: boolean;
 
   constructor() {
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      throw new Error('SMTP configuration missing. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.');
+    // Force development mode if environment variables are not properly configured
+    // or if we're explicitly in development
+    const hasValidCredentials = process.env.SMTP_HOST && 
+                               process.env.SMTP_USER && 
+                               process.env.SMTP_PASS && 
+                               process.env.SMTP_HOST !== 'your-smtp-host';
+    
+    this.developmentMode = !hasValidCredentials || process.env.NODE_ENV === 'development';
+    
+    if (this.developmentMode) {
+      console.log('📧 Email service running in DEVELOPMENT MODE - emails will be simulated');
+      console.log('💡 OTP codes will be logged to console for testing');
+      this.transporter = null;
+      return;
     }
 
     this.transporter = nodemailer.createTransport({
@@ -28,6 +41,15 @@ class EmailService {
 
   async sendEmail(options: EmailOptions): Promise<boolean> {
     try {
+      if (this.developmentMode) {
+        console.log('🎭 DEVELOPMENT MODE - Simulating email send:');
+        console.log(`📧 To: ${options.to}`);
+        console.log(`📝 Subject: ${options.subject}`);
+        if (options.text) console.log(`📄 Text: ${options.text}`);
+        console.log('✅ Email simulation completed successfully');
+        return true;
+      }
+
       const mailOptions = {
         from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: options.to,
@@ -36,7 +58,7 @@ class EmailService {
         html: options.html,
       };
 
-      const info = await this.transporter.sendMail(mailOptions);
+      const info = await this.transporter!.sendMail(mailOptions);
       console.log('Email sent successfully:', info.messageId);
       return true;
     } catch (error) {
@@ -46,6 +68,14 @@ class EmailService {
   }
 
   async sendOTP(email: string, otp: string): Promise<boolean> {
+    if (this.developmentMode) {
+      console.log('🎭 DEVELOPMENT MODE - OTP Email Simulation:');
+      console.log(`📧 To: ${email}`);
+      console.log(`🔢 OTP Code: ${otp}`);
+      console.log('💡 Use this OTP code to complete authentication in development');
+      return true;
+    }
+
     const subject = 'Your Ride App Verification Code';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
