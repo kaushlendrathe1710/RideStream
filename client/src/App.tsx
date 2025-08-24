@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import RiderHome from "@/pages/rider/home";
 import RiderBooking from "@/pages/rider/booking";
 import RiderTrip from "@/pages/rider/trip";
+import RiderHistory from "@/pages/rider/history";
 import DriverDashboard from "@/pages/driver/dashboard";
 import DriverRideRequest from "@/pages/driver/ride-request";
 import DriverTrip from "@/pages/driver/trip";
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/rider" component={user ? RiderHome : LoginPage} />
       <Route path="/rider/booking" component={user ? RiderBooking : LoginPage} />
       <Route path="/rider/trip/:rideId" component={user ? RiderTrip : LoginPage} />
+      <Route path="/rider/history" component={user ? RiderHistory : LoginPage} />
       <Route path="/driver" component={user ? DriverDashboard : LoginPage} />
       <Route path="/driver/ride-request/:rideId" component={user ? DriverRideRequest : LoginPage} />
       <Route path="/driver/trip/:rideId" component={user ? DriverTrip : LoginPage} />

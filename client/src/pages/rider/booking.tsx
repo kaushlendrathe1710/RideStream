@@ -6,7 +6,7 @@ import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Car, Truck, Check, Clock, MapPin, Users } from "lucide-react";
+import { ArrowLeft, Car, Truck, Check, Clock, MapPin, Users, IndianRupee, Zap, Shield, Star, Bike } from "lucide-react";
 import { vehicleTypes, calculateDistance, calculateDuration } from "@/lib/mock-data";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -15,10 +15,11 @@ import type { DriverWithUser } from "@shared/schema";
 
 export default function RiderBooking() {
   const [, setLocation] = useLocation();
-  const [selectedVehicle, setSelectedVehicle] = useState("sedan");
+  const [selectedVehicle, setSelectedVehicle] = useState("mini");
   const [step, setStep] = useState<"selection" | "matching" | "driver_found">("selection");
   const [nearbyDrivers, setNearbyDrivers] = useState<DriverWithUser[]>([]);
   const [assignedDriver, setAssignedDriver] = useState<DriverWithUser | null>(null);
+  const [fareEstimate, setFareEstimate] = useState<any>(null);
   const { toast } = useToast();
   const geolocation = useGeolocation();
   
@@ -45,6 +46,90 @@ export default function RiderBooking() {
   ) : 0;
   
   const duration = calculateDuration(distance);
+
+  // Enhanced vehicle types with Indian market focus
+  const enhancedVehicleTypes = [
+    {
+      id: 'mini',
+      name: 'Ride Mini',
+      description: 'Affordable rides',
+      icon: Car,
+      capacity: '4 seats',
+      baseRate: 8,
+      perKmRate: 12,
+      features: ['AC', 'Music'],
+      eta: '2-5 min',
+      color: 'bg-blue-500',
+      savings: 'Most affordable'
+    },
+    {
+      id: 'sedan',
+      name: 'Ride Sedan',
+      description: 'Comfortable rides',
+      icon: Car,
+      capacity: '4 seats',
+      baseRate: 15,
+      perKmRate: 18,
+      features: ['AC', 'Music', 'Premium'],
+      eta: '3-7 min',
+      color: 'bg-green-500',
+      savings: null
+    },
+    {
+      id: 'suv',
+      name: 'Ride SUV',
+      description: 'Spacious & premium',
+      icon: Truck,
+      capacity: '6-7 seats',
+      baseRate: 25,
+      perKmRate: 28,
+      features: ['AC', 'Music', 'Premium', 'Extra Space'],
+      eta: '5-10 min',
+      color: 'bg-purple-500',
+      savings: null
+    },
+    {
+      id: 'auto',
+      name: 'Auto Rickshaw',
+      description: 'Quick & economical',
+      icon: Bike,
+      capacity: '3 seats',
+      baseRate: 5,
+      perKmRate: 8,
+      features: ['Open Air', 'Quick'],
+      eta: '1-3 min',
+      color: 'bg-yellow-500',
+      savings: 'Save ₹15'
+    }
+  ];
+
+  // Calculate dynamic fare estimation
+  useEffect(() => {
+    if (distance > 0) {
+      const selectedVehicleType = enhancedVehicleTypes.find(v => v.id === selectedVehicle);
+      if (selectedVehicleType) {
+        const baseFare = selectedVehicleType.baseRate;
+        const distanceFare = distance * selectedVehicleType.perKmRate;
+        const surge = 1.0; // Normal pricing
+        const total = Math.round((baseFare + distanceFare) * surge);
+        const taxes = Math.round(total * 0.05);
+        
+        setFareEstimate({
+          baseFare,
+          distanceFare: Math.round(distanceFare),
+          surgeFare: 0,
+          total,
+          surge,
+          breakdown: {
+            base: baseFare,
+            distance: Math.round(distanceFare),
+            taxes,
+            finalTotal: total + taxes
+          }
+        });
+      }
+    }
+  }, [selectedVehicle, distance]);
 
   // Fetch nearby drivers for selected vehicle type
   const { data: availableDrivers = [] } = useQuery<DriverWithUser[]>({
@@ -406,71 +491,144 @@ export default function RiderBooking() {
             </div>
           )}
 
-          {/* Vehicle Options */}
-          <div className="space-y-3">
-            {vehicleTypes.map((vehicle) => {
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900" data-testid="choose-vehicle-title">Choose Vehicle</h2>
+              <p className="text-gray-500" data-testid="trip-distance">{distance.toFixed(1)} km • {duration} min ride</p>
+            </div>
+            <Badge variant="outline" className="text-green-600">
+              <Zap className="w-3 w-3 mr-1" />
+              Normal pricing
+            </Badge>
+          </div>
+
+          {/* Enhanced Vehicle Options */}
+          <div className="space-y-3 mb-6">
+            {enhancedVehicleTypes.map((vehicle) => {
               const driversForVehicle = availableDrivers.filter(d => d.vehicleType === vehicle.id);
               const isAvailable = driversForVehicle.length > 0;
+              const isSelected = selectedVehicle === vehicle.id;
+              
+              // Calculate fare for this vehicle
+              const vehicleFare = Math.round(vehicle.baseRate + (distance * vehicle.perKmRate));
+              const taxes = Math.round(vehicleFare * 0.05);
+              const totalFare = vehicleFare + taxes;
               
               return (
-              <Button
-                key={vehicle.id}
-                variant="ghost"
-                className={`w-full p-4 h-auto justify-between rounded-lg transition-all ${
-                  selectedVehicle === vehicle.id
-                    ? "border-2 border-rider-primary bg-rider-primary bg-opacity-5"
-                    : isAvailable 
-                      ? "border border-gray-200 hover:border-rider-primary"
-                      : "border border-gray-200 opacity-50 cursor-not-allowed"
-                }`}
-                onClick={() => isAvailable && setSelectedVehicle(vehicle.id)}
-                data-testid={`vehicle-${vehicle.id}`}
-                disabled={!isAvailable}
-              >
-                <div className="flex items-center space-x-3">
-                  {vehicle.icon === "car" ? (
-                    <Car className={`text-2xl ${selectedVehicle === vehicle.id ? "text-rider-primary" : "text-gray-400"}`} />
-                  ) : (
-                    <Truck className={`text-2xl ${selectedVehicle === vehicle.id ? "text-rider-primary" : "text-gray-400"}`} />
-                  )}
-                  <div className="text-left">
-                    <h3 className="font-medium text-gray-900">{vehicle.name}</h3>
-                    <p className="text-sm text-gray-500">{vehicle.description}</p>
-                    <p className="text-xs text-rider-primary">{vehicle.eta} away</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold text-gray-900" data-testid={`fare-${vehicle.id}`}>
-                    ₹{vehicle.id === selectedVehicle && fareData ? fareData.total : Math.round(vehicle.baseFare + distance * vehicle.perKm)}
-                  </p>
-                  {vehicle.id === selectedVehicle && fareData && (
-                    <p className="text-xs text-gray-500">
-                      Base: ₹{fareData.baseFare} + Tax
-                    </p>
-                  )}
-                  {selectedVehicle === vehicle.id && (
-                    <div className="flex items-center space-x-1">
-                      <Check className="text-xs text-rider-primary" />
-                      <span className="text-xs text-rider-primary">Selected</span>
+                <div
+                  key={vehicle.id}
+                  onClick={() => isAvailable && setSelectedVehicle(vehicle.id)}
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    isSelected
+                      ? 'border-rider-primary bg-rider-primary/5 shadow-md'
+                      : isAvailable
+                        ? 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                        : 'border-gray-200 opacity-50 cursor-not-allowed'
+                  }`}
+                  data-testid={`vehicle-${vehicle.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-3 rounded-lg ${
+                        isSelected ? 'bg-rider-primary text-white' : vehicle.color + ' text-white'
+                      }`}>
+                        <vehicle.icon className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h3 className="font-semibold text-gray-900" data-testid={`vehicle-name-${vehicle.id}`}>
+                            {vehicle.name}
+                          </h3>
+                          {isSelected && <Check className="w-4 h-4 text-rider-primary" />}
+                          {vehicle.savings && (
+                            <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">
+                              {vehicle.savings}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">{vehicle.description}</p>
+                        <div className="flex items-center space-x-2 mt-2">
+                          <Badge variant="secondary" className="text-xs">
+                            <Users className="w-3 h-3 mr-1" />
+                            {vehicle.capacity}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {vehicle.eta}
+                          </Badge>
+                          {driversForVehicle.length > 0 ? (
+                            <Badge className="text-xs bg-green-100 text-green-800">
+                              {driversForVehicle.length} available
+                            </Badge>
+                          ) : (
+                            <Badge className="text-xs bg-gray-100 text-gray-600">
+                              Limited
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1 mt-1">
+                          {vehicle.features.map((feature, index) => (
+                            <span key={index} className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                              {feature}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  {/* Show driver availability */}
-                  <div className="mt-1">
-                    {availableDrivers.filter(d => d.vehicleType === vehicle.id).length > 0 ? (
-                      <Badge className="text-xs bg-green-100 text-green-800 hover:bg-green-100">
-                        {availableDrivers.filter(d => d.vehicleType === vehicle.id).length} available
-                      </Badge>
-                    ) : (
-                      <Badge className="text-xs bg-gray-100 text-gray-600 hover:bg-gray-100">
-                        Limited
-                      </Badge>
-                    )}
+                    <div className="text-right">
+                      <div className="flex items-center space-x-1">
+                        <IndianRupee className="w-4 h-4 text-gray-600" />
+                        <span className="font-bold text-lg text-gray-900" data-testid={`vehicle-price-${vehicle.id}`}>
+                          {isSelected && fareEstimate ? fareEstimate.breakdown.finalTotal : totalFare}
+                        </span>
+                      </div>
+                      {isSelected && fareEstimate && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Base ₹{fareEstimate.baseFare} + ₹{fareEstimate.breakdown.distance}
+                        </p>
+                      )}
+                      <div className="flex items-center mt-1">
+                        <Star className="w-3 h-3 text-yellow-400 fill-current" />
+                        <span className="text-xs text-gray-600 ml-1">4.8</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </Button>
-            );
+              );
             })}
           </div>
+
+          {/* Enhanced Price Breakdown */}
+          {fareEstimate && (
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                <IndianRupee className="w-4 h-4 mr-1" />
+                Fare Breakdown
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Base fare</span>
+                  <span>₹{fareEstimate.breakdown.base}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Distance ({distance.toFixed(1)} km)</span>
+                  <span>₹{fareEstimate.breakdown.distance}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Taxes & fees</span>
+                  <span>₹{fareEstimate.breakdown.taxes}</span>
+                </div>
+                <div className="border-t border-gray-200 pt-2 flex justify-between font-semibold">
+                  <span>Total</span>
+                  <span>₹{fareEstimate.breakdown.finalTotal}</span>
+                </div>
+              </div>
+              <div className="mt-3 p-2 bg-blue-50 rounded flex items-center">
+                <Shield className="w-4 h-4 text-blue-600 mr-2" />
+                <span className="text-xs text-blue-800">Price includes GST • No hidden charges</span>
+              </div>
+            </div>
+          )}
 
           {/* Book Ride Button */}
           <Button
