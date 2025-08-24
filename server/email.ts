@@ -19,8 +19,7 @@ class EmailService {
                                process.env.SMTP_HOST !== 'your-smtp-host';
     
     // Enable production mode if credentials are available and user wants real emails
-    // For now, using development mode for reliable testing
-    this.developmentMode = true; // Set to false when SMTP is properly configured
+    this.developmentMode = !hasValidCredentials;
     
     if (this.developmentMode) {
       console.log('📧 Email service running in DEVELOPMENT MODE - emails will be simulated');
@@ -33,14 +32,19 @@ class EmailService {
     console.log(`📮 SMTP Host: ${process.env.SMTP_HOST}`);
     console.log(`👤 SMTP User: ${process.env.SMTP_USER}`);
 
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_PORT === '465', // true for 465, false for other ports
+      port: smtpPort,
+      secure: smtpPort === 465, // true for 465 (SSL), false for 587 (TLS)
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      // Additional settings for better compatibility
+      tls: {
+        rejectUnauthorized: false // Accept self-signed certificates
+      }
     });
   }
 

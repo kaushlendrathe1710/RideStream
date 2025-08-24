@@ -31,14 +31,23 @@ export class AuthService {
         expiresAt
       });
 
-      // Send email
+      // Send email (try real email first, fallback to console)
       const emailSent = await emailService.sendOTP(email, otp);
       
       if (!emailSent) {
-        return { success: false, message: 'Failed to send email' };
+        // Fallback: Show OTP in console for development
+        console.log('🚨 EMAIL FALLBACK MODE:');
+        console.log(`📧 To: ${email}`);
+        console.log(`🔢 OTP Code: ${otp}`);
+        console.log('💡 Email failed, use this OTP from console');
+        
+        return { 
+          success: true, 
+          message: 'OTP ready - check console logs as email delivery failed' 
+        };
       }
 
-      return { success: true, message: 'OTP sent successfully' };
+      return { success: true, message: 'OTP sent to your email successfully' };
     } catch (error) {
       console.error('Error sending OTP:', error);
       return { success: false, message: 'Internal server error' };
