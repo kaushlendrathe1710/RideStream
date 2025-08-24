@@ -37,7 +37,8 @@ class EmailService {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: smtpPort,
-      secure: true, // Always use SSL for Hostinger
+      secure: false, // Use STARTTLS for port 587
+      requireTLS: true, // Force STARTTLS for port 587
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
