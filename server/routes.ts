@@ -385,6 +385,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Driver-specific ride request endpoints
+  app.get("/api/drivers/:driverId/ride-requests", async (req, res) => {
+    try {
+      const { driverId } = req.params;
+      const { lat, lng, vehicleType, radius } = req.query;
+      
+      if (!lat || !lng || !vehicleType) {
+        return res.status(400).json({ 
+          message: "Driver location (lat, lng) and vehicleType are required" 
+        });
+      }
+      
+      const driverLat = parseFloat(lat as string);
+      const driverLng = parseFloat(lng as string);
+      const searchRadius = radius ? parseFloat(radius as string) : 10;
+      
+      const rides = await storage.getRideRequestsForDriver(
+        driverId, 
+        driverLat, 
+        driverLng, 
+        vehicleType as string, 
+        searchRadius
+      );
+      
+      res.json(rides);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching driver-specific ride requests", error });
+    }
+  });
+
+  // Ride request queue management
+  app.post("/api/rides/:rideId/queue/:driverId", async (req, res) => {
+    try {
+      const { rideId, driverId } = req.params;
+      await storage.addDriverToRideQueue(rideId, driverId);
+      res.json({ success: true, message: "Driver added to ride queue" });
+    } catch (error) {
+      res.status(500).json({ message: "Error adding driver to queue", error });
+    }
+  });
+
+  app.delete("/api/rides/:rideId/queue/:driverId", async (req, res) => {
+    try {
+      const { rideId, driverId } = req.params;
+      await storage.removeDriverFromRideQueue(rideId, driverId);
+      res.json({ success: true, message: "Driver removed from ride queue" });
+    } catch (error) {
+      res.status(500).json({ message: "Error removing driver from queue", error });
+    }
+  });
+
+  app.get("/api/rides/:rideId/queue", async (req, res) => {
+    try {
+      const { rideId } = req.params;
+      const driverIds = await storage.getDriversForRideRequest(rideId);
+      res.json({ rideId, driverIds, queueLength: driverIds.length });
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching ride queue", error });
+    }
+  });
+
+  // Ride request expiration
+  app.post("/api/rides/expire-old-requests", async (req, res) => {
+    try {
+      const { maxAgeMinutes } = req.body;
+      await storage.expireOldRideRequests(maxAgeMinutes || 15);
+      res.json({ success: true, message: "Old ride requests expired" });
+    } catch (error) {
+      res.status(500).json({ message: "Error expiring old requests", error });
+    }
+  });
+
   // Calculate fare
   app.post("/api/calculate-fare", async (req, res) => {
     try {

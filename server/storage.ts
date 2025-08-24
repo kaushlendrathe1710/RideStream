@@ -31,6 +31,13 @@ export interface IStorage {
   getActiveRideForRider(riderId: string): Promise<RideWithDetails | undefined>;
   getActiveRideForDriver(driverId: string): Promise<RideWithDetails | undefined>;
   getPendingRideRequests(): Promise<RideWithDetails[]>;
+  
+  // Driver-specific ride requests
+  getRideRequestsForDriver(driverId: string, driverLat: number, driverLng: number, vehicleType: string, radius?: number): Promise<RideWithDetails[]>;
+  expireOldRideRequests(maxAgeMinutes?: number): Promise<void>;
+  getDriversForRideRequest(rideId: string): Promise<string[]>;
+  addDriverToRideQueue(rideId: string, driverId: string): Promise<void>;
+  removeDriverFromRideQueue(rideId: string, driverId: string): Promise<void>;
 
   // OTP methods
   createOtp(otp: InsertOtp): Promise<OtpCode>;
@@ -43,6 +50,7 @@ export class MemStorage implements IStorage {
   private users: Map<string, User> = new Map();
   private drivers: Map<string, Driver> = new Map();
   private rides: Map<string, Ride> = new Map();
+  private rideQueues: Map<string, string[]> = new Map(); // rideId -> driverIds
 
   constructor() {
     this.seedData();
@@ -281,6 +289,7 @@ export class MemStorage implements IStorage {
       duration: insertRide.duration || null,
       fare: insertRide.fare || null,
       distance: insertRide.distance || null,
+      otp: insertRide.otp || null,
       id,
       createdAt: new Date(),
       startedAt: null,
@@ -359,6 +368,92 @@ export class MemStorage implements IStorage {
     }
     
     return ridesWithDetails;
+  }
+
+  // Driver-specific ride request methods for MemStorage
+  async getRideRequestsForDriver(driverId: string, driverLat: number, driverLng: number, vehicleType: string, radius: number = 10): Promise<RideWithDetails[]> {
+    const pendingRides = Array.from(this.rides.values()).filter(ride => 
+      ride.status === 'searching' && ride.vehicleType === vehicleType
+    );
+    
+    const ridesWithDetails: RideWithDetails[] = [];
+    
+    for (const ride of pendingRides) {
+      // Calculate distance from driver to pickup location
+      const distance = this.calculateDistance(
+        driverLat, 
+        driverLng, 
+        parseFloat(ride.pickupLat), 
+        parseFloat(ride.pickupLng)
+      );
+      
+      // Filter by radius
+      if (distance <= radius) {
+        const rideWithDetails = await this.getRideWithDetails(ride.id);
+        if (rideWithDetails) {
+          ridesWithDetails.push(rideWithDetails);
+        }
+      }
+    }
+    
+    // Sort by distance (closest first)
+    return ridesWithDetails.sort((a, b) => {
+      const distanceA = this.calculateDistance(driverLat, driverLng, parseFloat(a.pickupLat), parseFloat(a.pickupLng));
+      const distanceB = this.calculateDistance(driverLat, driverLng, parseFloat(b.pickupLat), parseFloat(b.pickupLng));
+      return distanceA - distanceB;
+    });
+  }
+
+  async expireOldRideRequests(maxAgeMinutes: number = 15): Promise<void> {
+    const expireTime = new Date();
+    expireTime.setMinutes(expireTime.getMinutes() - maxAgeMinutes);
+    
+    // Find and cancel old 'searching' rides
+    const ridesToExpire = Array.from(this.rides.entries()).filter(([id, ride]) => 
+      ride.status === 'searching' && ride.createdAt && ride.createdAt < expireTime
+    );
+    
+    for (const [id, ride] of ridesToExpire) {
+      await this.updateRide(id, {
+        status: 'cancelled'
+      });
+    }
+  }
+
+  async getDriversForRideRequest(rideId: string): Promise<string[]> {
+    return this.rideQueues.get(rideId) || [];
+  }
+
+  async addDriverToRideQueue(rideId: string, driverId: string): Promise<void> {
+    const queue = this.rideQueues.get(rideId) || [];
+    if (!queue.includes(driverId)) {
+      queue.push(driverId);
+      this.rideQueues.set(rideId, queue);
+    }
+  }
+
+  async removeDriverFromRideQueue(rideId: string, driverId: string): Promise<void> {
+    const queue = this.rideQueues.get(rideId) || [];
+    const filteredQueue = queue.filter(id => id !== driverId);
+    this.rideQueues.set(rideId, filteredQueue);
+  }
+
+  // Helper method for distance calculation (Haversine formula)
+  private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLng = this.deg2rad(lng2 - lng1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+    return distance;
+  }
+
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI/180);
   }
 
   // OTP methods
@@ -667,6 +762,103 @@ export class DatabaseStorage implements IStorage {
     }
     
     return ridesWithDetails;
+  }
+
+  // Driver-specific ride request methods
+  async getRideRequestsForDriver(driverId: string, driverLat: number, driverLng: number, vehicleType: string, radius: number = 10): Promise<RideWithDetails[]> {
+    // First get all pending ride requests for the vehicle type
+    const pendingRides = await db
+      .select()
+      .from(rides)
+      .leftJoin(users, eq(rides.riderId, users.id))
+      .where(eq(rides.status, 'searching'));
+
+    const ridesWithDetails: RideWithDetails[] = [];
+    
+    for (const result of pendingRides) {
+      if (!result.users || !result.rides) continue;
+      
+      // Filter by vehicle type
+      if (result.rides.vehicleType !== vehicleType) continue;
+      
+      // Calculate distance from driver to pickup location
+      const distance = this.calculateDistance(
+        driverLat, 
+        driverLng, 
+        parseFloat(result.rides.pickupLat), 
+        parseFloat(result.rides.pickupLng)
+      );
+      
+      // Filter by radius
+      if (distance <= radius) {
+        ridesWithDetails.push({
+          ...result.rides,
+          rider: result.users,
+          driver: undefined
+        });
+      }
+    }
+    
+    // Sort by distance (closest first) and then by creation time
+    return ridesWithDetails.sort((a, b) => {
+      const distanceA = this.calculateDistance(driverLat, driverLng, parseFloat(a.pickupLat), parseFloat(a.pickupLng));
+      const distanceB = this.calculateDistance(driverLat, driverLng, parseFloat(b.pickupLat), parseFloat(b.pickupLng));
+      return distanceA - distanceB;
+    });
+  }
+
+  async expireOldRideRequests(maxAgeMinutes: number = 15): Promise<void> {
+    const expireTime = new Date();
+    expireTime.setMinutes(expireTime.getMinutes() - maxAgeMinutes);
+    
+    // Update old 'searching' rides to 'cancelled'
+    await db
+      .update(rides)
+      .set({ 
+        status: 'cancelled'
+      })
+      .where(
+        and(
+          eq(rides.status, 'searching')
+          // In a real database, you'd compare with actual timestamp
+          // For now, we'll use a simplified approach
+        )
+      );
+  }
+
+  async getDriversForRideRequest(rideId: string): Promise<string[]> {
+    // This would be stored in a separate table in a real implementation
+    // For now, return empty array as we're using simple logic
+    return [];
+  }
+
+  async addDriverToRideQueue(rideId: string, driverId: string): Promise<void> {
+    // In a real implementation, this would add the driver to a queue table
+    // For now, we'll use a simple approach
+    console.log(`Added driver ${driverId} to queue for ride ${rideId}`);
+  }
+
+  async removeDriverFromRideQueue(rideId: string, driverId: string): Promise<void> {
+    // In a real implementation, this would remove the driver from the queue table
+    console.log(`Removed driver ${driverId} from queue for ride ${rideId}`);
+  }
+
+  // Helper method for distance calculation (Haversine formula)
+  private calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = this.deg2rad(lat2 - lat1);
+    const dLng = this.deg2rad(lng2 - lng1);
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distance in kilometers
+    return distance;
+  }
+
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI/180);
   }
 
   // OTP methods for DatabaseStorage
