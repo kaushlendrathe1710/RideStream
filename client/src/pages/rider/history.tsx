@@ -165,7 +165,7 @@ export default function RiderHistory() {
 
   // Group rides by date
   const groupedRides = filteredRides.reduce((groups, ride) => {
-    const date = formatDate(ride.createdAt);
+    const date = formatDate(ride.createdAt?.toString() || '');
     if (!groups[date]) {
       groups[date] = [];
     }
@@ -300,7 +300,7 @@ export default function RiderHistory() {
                           {getStatusText(ride.status)}
                         </Badge>
                         <div className="text-right">
-                          <p className="text-sm font-semibold text-gray-900">{formatTime(ride.createdAt)}</p>
+                          <p className="text-sm font-semibold text-gray-900">{formatTime(ride.createdAt?.toString() || '')}</p>
                           {ride.fare && (
                             <p className="text-sm text-gray-600">₹{ride.fare}</p>
                           )}
