@@ -1,7 +1,6 @@
 import { storage } from './storage';
 import { emailService } from './email';
 import { randomBytes } from 'crypto';
-import bcrypt from 'bcryptjs';
 
 export class AuthService {
   // Generate a 6-digit OTP
@@ -51,80 +50,6 @@ export class AuthService {
       return { success: true, message: 'OTP sent to your email successfully' };
     } catch (error) {
       console.error('Error sending OTP:', error);
-      return { success: false, message: 'Internal server error' };
-    }
-  }
-
-  // Hash password
-  private async hashPassword(password: string): Promise<string> {
-    const saltRounds = 12;
-    return bcrypt.hash(password, saltRounds);
-  }
-
-  // Verify password
-  private async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-    return bcrypt.compare(password, hashedPassword);
-  }
-
-  // Login with password
-  async loginWithPassword(email: string, password: string): Promise<{ success: boolean; message: string; user?: any }> {
-    try {
-      // Find user by email
-      const user = await storage.getUserByEmail(email);
-      
-      if (!user) {
-        return { success: false, message: 'Invalid email or password' };
-      }
-      
-      if (!user.password) {
-        return { success: false, message: 'Password not set. Please use OTP login or set a password first.' };
-      }
-      
-      // Verify password
-      const isValidPassword = await this.verifyPassword(password, user.password);
-      
-      if (!isValidPassword) {
-        return { success: false, message: 'Invalid email or password' };
-      }
-      
-      return { 
-        success: true, 
-        message: 'Login successful', 
-        user: { ...user, password: undefined } // Remove password from response
-      };
-    } catch (error) {
-      console.error('Error during password login:', error);
-      return { success: false, message: 'Internal server error' };
-    }
-  }
-
-  // Update user password
-  async updatePassword(userId: string, currentPassword: string | null, newPassword: string): Promise<{ success: boolean; message: string }> {
-    try {
-      // Get user
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return { success: false, message: 'User not found' };
-      }
-      
-      // If user has existing password, verify current password
-      if (user.password && currentPassword) {
-        const isValidCurrentPassword = await this.verifyPassword(currentPassword, user.password);
-        if (!isValidCurrentPassword) {
-          return { success: false, message: 'Current password is incorrect' };
-        }
-      }
-      
-      // Hash new password
-      const hashedPassword = await this.hashPassword(newPassword);
-      
-      // Update password
-      await storage.updateUserPassword(userId, hashedPassword);
-      
-      return { success: true, message: 'Password updated successfully' };
-    } catch (error) {
-      console.error('Error updating password:', error);
       return { success: false, message: 'Internal server error' };
     }
   }

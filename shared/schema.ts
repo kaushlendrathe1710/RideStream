@@ -8,7 +8,6 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   phone: text("phone").notNull().unique(),
-  password: text("password"), // Optional - users can use OTP or password
   type: text("type").notNull(), // 'rider' or 'driver'
   profilePicture: text("profile_picture"),
   rating: decimal("rating", { precision: 3, scale: 2 }).default("5.00"),
