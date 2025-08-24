@@ -71,7 +71,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ 
           success: true, 
           message: result.message, 
-          user: result.user 
+          user: result.user,
+          isNewUser: result.isNewUser 
         });
       } else {
         res.status(400).json({ success: false, message: result.message });

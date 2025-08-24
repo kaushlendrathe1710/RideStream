@@ -21,7 +21,7 @@ export default function LoginPage() {
     mutationFn: async (email: string) => {
       return apiRequest('/api/auth/send-otp', 'POST', { email });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       if (data.success) {
         setStep('otp');
         toast({
@@ -50,21 +50,32 @@ export default function LoginPage() {
     mutationFn: async ({ email, code }: { email: string; code: string }) => {
       return apiRequest('/api/auth/verify-otp', 'POST', { email, code });
     },
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       if (data.success) {
-        // Store user data in localStorage for now
+        // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(data.user));
         
-        toast({
-          title: "Login Successful",
-          description: "Welcome to the ride app!",
-        });
-        
-        // Redirect based on user type
-        if (data.user.type === 'driver') {
-          setLocation('/driver');
+        // Check if it's a new user or returning user
+        if (data.isNewUser || !data.user.name || !data.user.phone) {
+          // New user or incomplete profile - redirect to onboarding
+          setLocation('/onboarding');
+          toast({
+            title: "Welcome!",
+            description: "Please complete your profile to continue",
+          });
         } else {
-          setLocation('/rider');
+          // Returning user with complete profile - redirect to dashboard
+          toast({
+            title: "Welcome Back",
+            description: `Good to see you again, ${data.user.name}!`,
+          });
+          
+          // Redirect based on user type
+          if (data.user.type === 'driver') {
+            setLocation('/driver');
+          } else {
+            setLocation('/rider');
+          }
         }
       } else {
         toast({

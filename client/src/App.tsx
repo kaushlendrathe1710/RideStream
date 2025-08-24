@@ -12,6 +12,7 @@ import DriverRideRequest from "@/pages/driver/ride-request";
 import DriverTrip from "@/pages/driver/trip";
 import AdminDashboard from "@/pages/admin/dashboard";
 import LoginPage from "@/pages/auth/login";
+import OnboardingPage from "@/pages/auth/onboarding";
 
 function Router() {
   // Check if user is logged in
@@ -20,6 +21,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginPage} />
+      <Route path="/onboarding" component={OnboardingPage} />
       {/* Redirect to login if not authenticated */}
       <Route path="/" component={user ? RiderHome : LoginPage} />
       <Route path="/rider" component={user ? RiderHome : LoginPage} />

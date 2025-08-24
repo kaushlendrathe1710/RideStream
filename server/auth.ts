@@ -46,7 +46,7 @@ export class AuthService {
   }
 
   // Verify OTP and return user
-  async verifyOTP(email: string, code: string): Promise<{ success: boolean; message: string; user?: any }> {
+  async verifyOTP(email: string, code: string): Promise<{ success: boolean; message: string; user?: any; isNewUser?: boolean }> {
     try {
       // Find valid OTP
       const otpRecord = await storage.getOtp(email, code);
@@ -60,21 +60,24 @@ export class AuthService {
 
       // Check if user exists
       let user = await storage.getUserByEmail(email);
+      let isNewUser = false;
       
       if (!user) {
-        // Create new user if doesn't exist
+        // Create minimal user profile for new users
         user = await storage.createUser({
-          name: email.split('@')[0], // Use email prefix as default name
+          name: '', // Empty name to indicate incomplete profile
           email,
-          phone: '', // Will be updated later if needed
-          type: 'rider' // Default to rider
+          phone: '', 
+          type: 'rider' // Default type, will be updated during onboarding
         });
+        isNewUser = true;
       }
 
       return { 
         success: true, 
         message: 'Login successful', 
-        user 
+        user,
+        isNewUser
       };
     } catch (error) {
       console.error('Error verifying OTP:', error);
