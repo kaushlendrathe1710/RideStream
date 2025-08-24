@@ -83,7 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/drivers/nearby", async (req, res) => {
     try {
-      const { lat, lng, vehicleType } = req.query;
+      const { lat, lng, vehicleType, radius } = req.query;
       if (!lat || !lng || !vehicleType) {
         return res.status(400).json({ message: "Latitude, longitude, and vehicle type required" });
       }
@@ -91,11 +91,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const drivers = await storage.getNearbyDrivers(
         parseFloat(lat as string),
         parseFloat(lng as string),
-        vehicleType as string
+        vehicleType as string,
+        radius ? parseFloat(radius as string) : 5 // Default 5km radius
       );
       res.json(drivers);
     } catch (error) {
       res.status(500).json({ message: "Error fetching nearby drivers", error });
+    }
+  });
+
+  // Location-related routes
+  app.post("/api/geocode", async (req, res) => {
+    try {
+      const { address } = req.body;
+      if (!address) {
+        return res.status(400).json({ message: "Address required" });
+      }
+
+      // Mock geocoding - in real app, integrate with Google Maps Geocoding API
+      const mockResult = {
+        lat: 28.6139 + (Math.random() - 0.5) * 0.1,
+        lng: 77.2090 + (Math.random() - 0.5) * 0.1,
+        formatted_address: address,
+        place_id: `mock_${Date.now()}`
+      };
+
+      res.json(mockResult);
+    } catch (error) {
+      res.status(500).json({ message: "Geocoding failed", error });
+    }
+  });
+
+  app.post("/api/reverse-geocode", async (req, res) => {
+    try {
+      const { lat, lng } = req.body;
+      if (!lat || !lng) {
+        return res.status(400).json({ message: "Latitude and longitude required" });
+      }
+
+      // Mock reverse geocoding
+      const mockAddress = `Street ${Math.floor(Math.random() * 1000)}, City, State`;
+      
+      res.json({
+        formatted_address: mockAddress,
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Reverse geocoding failed", error });
+    }
+  });
+
+  app.post("/api/calculate-distance", async (req, res) => {
+    try {
+      const { origin, destination } = req.body;
+      if (!origin || !destination) {
+        return res.status(400).json({ message: "Origin and destination required" });
+      }
+
+      // Calculate distance using Haversine formula
+      const R = 6371; // Earth's radius in km
+      const dLat = (destination.lat - origin.lat) * Math.PI / 180;
+      const dLng = (destination.lng - origin.lng) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(origin.lat * Math.PI / 180) * Math.cos(destination.lat * Math.PI / 180) * 
+        Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+
+      const duration = Math.round((distance / 25) * 60); // 25 km/h average speed
+
+      res.json({
+        distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
+        duration: duration, // in minutes
+        distance_text: `${distance.toFixed(1)} km`,
+        duration_text: `${duration} min`
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Distance calculation failed", error });
+    }
+  });
+
+  // Admin-specific routes  
+  app.get("/api/drivers/online", async (req, res) => {
+    try {
+      const onlineDrivers = await storage.getOnlineDrivers();
+      res.json(onlineDrivers);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching online drivers", error });
+    }
+  });
+
+  app.get("/api/rides/active", async (req, res) => {
+    try {
+      // Get all rides that are not completed or cancelled
+      const activeStatuses = ['searching', 'driver_assigned', 'driver_arrived', 'in_progress'];
+      const pendingRides = await storage.getPendingRideRequests();
+      
+      // For now, return pending rides as active rides
+      // In a real implementation, you'd query by status
+      res.json(pendingRides);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching active rides", error });
+    }
+  });
+
+  app.get("/api/admin/stats", async (req, res) => {
+    try {
+      const onlineDrivers = await storage.getOnlineDrivers();
+      const pendingRides = await storage.getPendingRideRequests();
+      
+      // Mock statistics - in real app, calculate from database
+      const stats = {
+        totalRides: 1247,
+        activeRides: pendingRides.length,
+        onlineDrivers: onlineDrivers.length,
+        totalDrivers: 156,
+        totalUsers: 2891,
+        dailyRevenue: 89750.50,
+        avgTripTime: 24.5,
+        avgTripDistance: 8.3
+      };
+      
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching admin stats", error });
     }
   });
 

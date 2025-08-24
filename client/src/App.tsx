@@ -10,6 +10,7 @@ import RiderTrip from "@/pages/rider/trip";
 import DriverDashboard from "@/pages/driver/dashboard";
 import DriverRideRequest from "@/pages/driver/ride-request";
 import DriverTrip from "@/pages/driver/trip";
+import AdminDashboard from "@/pages/admin/dashboard";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
       <Route path="/driver" component={DriverDashboard} />
       <Route path="/driver/ride-request/:rideId" component={DriverRideRequest} />
       <Route path="/driver/trip/:rideId" component={DriverTrip} />
+      <Route path="/admin" component={AdminDashboard} />
       <Route component={NotFound} />
     </Switch>
   );

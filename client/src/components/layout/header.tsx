@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 
 interface HeaderProps {
   title: string;
-  mode: "rider" | "driver";
+  mode: "rider" | "driver" | "admin";
   onModeSwitch: () => void;
 }
 
@@ -34,7 +34,7 @@ export function Header({ title, mode, onModeSwitch }: HeaderProps) {
           }`}
           data-testid="mode-switch-button"
         >
-          Switch to {mode === "rider" ? "Driver" : "Rider"}
+          Switch to {mode === "rider" ? "Driver" : mode === "driver" ? "Admin" : "Rider"}
         </Button>
         <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center" data-testid="user-avatar">
           <User className="h-4 w-4 text-gray-600" />

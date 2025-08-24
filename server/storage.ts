@@ -17,7 +17,7 @@ export interface IStorage {
   createDriver(driver: InsertDriver): Promise<Driver>;
   updateDriver(id: string, driver: Partial<Driver>): Promise<Driver | undefined>;
   getOnlineDrivers(): Promise<DriverWithUser[]>;
-  getNearbyDrivers(lat: number, lng: number, vehicleType: string): Promise<DriverWithUser[]>;
+  getNearbyDrivers(lat: number, lng: number, vehicleType: string, radius?: number): Promise<DriverWithUser[]>;
 
   // Rides
   getRide(id: string): Promise<Ride | undefined>;
@@ -205,7 +205,7 @@ export class MemStorage implements IStorage {
     return driversWithUsers;
   }
 
-  async getNearbyDrivers(lat: number, lng: number, vehicleType: string): Promise<DriverWithUser[]> {
+  async getNearbyDrivers(lat: number, lng: number, vehicleType: string, radius: number = 5): Promise<DriverWithUser[]> {
     const onlineDrivers = await this.getOnlineDrivers();
     
     // Simple distance calculation - in real app would use proper geospatial queries
@@ -217,7 +217,7 @@ export class MemStorage implements IStorage {
       const driverLng = parseFloat(driver.currentLng);
       const distance = Math.sqrt(Math.pow(lat - driverLat, 2) + Math.pow(lng - driverLng, 2));
       
-      return distance < 0.1; // Within roughly 10km
+      return distance < (radius / 111); // Convert km to degrees (roughly)
     });
     
     return nearbyDrivers;
@@ -255,6 +255,7 @@ export class MemStorage implements IStorage {
       driverId: insertRide.driverId || null,
       duration: insertRide.duration || null,
       fare: insertRide.fare || null,
+      distance: insertRide.distance || null,
       id,
       createdAt: new Date(),
       startedAt: null,
@@ -410,7 +411,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getNearbyDrivers(lat: number, lng: number, vehicleType: string): Promise<DriverWithUser[]> {
+  async getNearbyDrivers(lat: number, lng: number, vehicleType: string, radius: number = 5): Promise<DriverWithUser[]> {
     const onlineDrivers = await this.getOnlineDrivers();
     
     // Simple distance calculation - in real app would use proper geospatial queries
@@ -422,7 +423,7 @@ export class DatabaseStorage implements IStorage {
       const driverLng = parseFloat(driver.currentLng);
       const distance = Math.sqrt(Math.pow(lat - driverLat, 2) + Math.pow(lng - driverLng, 2));
       
-      return distance < 0.1; // Within roughly 10km
+      return distance < (radius / 111); // Convert km to degrees (roughly)
     });
     
     return nearbyDrivers;

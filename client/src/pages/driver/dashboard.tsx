@@ -1,16 +1,32 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Header } from "@/components/layout/header";
 import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
-import { Star } from "lucide-react";
+import { Star, MapPin, Navigation, Wifi, WifiOff, AlertCircle } from "lucide-react";
+import { useGeolocation } from "@/hooks/use-geolocation";
+import { useLocationSearch } from "@/hooks/use-location-search";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { RideWithDetails } from "@shared/schema";
 
 export default function DriverDashboard() {
   const [, setLocation] = useLocation();
   const [isOnline, setIsOnline] = useState(true);
+  const [locationUpdateInterval, setLocationUpdateInterval] = useState<NodeJS.Timeout | null>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  // Enhanced geolocation tracking for drivers
+  const geolocation = useGeolocation({ 
+    watch: isOnline, // Only track location when online
+    enableHighAccuracy: true,
+    timeout: 30000,
+    maximumAge: 5000
+  });
+  const locationSearch = useLocationSearch();
 
   // Check for pending ride requests
   const { data: pendingRides } = useQuery<RideWithDetails[]>({
@@ -32,6 +48,51 @@ export default function DriverDashboard() {
     refetchInterval: 3000,
   });
 
+  // Update driver location mutation
+  const updateLocationMutation = useMutation({
+    mutationFn: async (locationData: { lat: number; lng: number; heading?: number; speed?: number }) => {
+      return apiRequest('/api/drivers/driver-1', 'PUT', {
+        currentLat: locationData.lat.toString(),
+        currentLng: locationData.lng.toString(),
+        isOnline: isOnline
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
+    },
+    onError: (error) => {
+      console.error('Failed to update driver location:', error);
+    }
+  });
+
+  // Toggle online status mutation
+  const toggleOnlineMutation = useMutation({
+    mutationFn: async (online: boolean) => {
+      return apiRequest('/api/drivers/driver-1', 'PUT', {
+        isOnline: online,
+        ...(geolocation.latitude && geolocation.longitude && {
+          currentLat: geolocation.latitude.toString(),
+          currentLng: geolocation.longitude.toString(),
+        })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
+      toast({
+        title: isOnline ? "You're offline" : "You're online",
+        description: isOnline ? "You won't receive ride requests" : "You can now receive ride requests"
+      });
+    },
+    onError: (error) => {
+      console.error('Failed to update online status:', error);
+      toast({
+        title: "Update failed",
+        description: "Could not update your status. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
   // Redirect to active ride if exists
   useEffect(() => {
     if (activeRide && ['driver_assigned', 'driver_arrived', 'in_progress'].includes(activeRide.status)) {
@@ -50,8 +111,47 @@ export default function DriverDashboard() {
     setLocation("/rider");
   };
 
+  // Real-time location updates when online
+  useEffect(() => {
+    if (isOnline && geolocation.latitude && geolocation.longitude) {
+      // Update location every 10 seconds when online
+      const interval = setInterval(() => {
+        updateLocationMutation.mutate({
+          lat: geolocation.latitude!,
+          lng: geolocation.longitude!,
+          heading: geolocation.heading || undefined,
+          speed: geolocation.speed || undefined
+        });
+      }, 10000);
+
+      setLocationUpdateInterval(interval);
+
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    } else {
+      if (locationUpdateInterval) {
+        clearInterval(locationUpdateInterval);
+        setLocationUpdateInterval(null);
+      }
+    }
+  }, [isOnline, geolocation.latitude, geolocation.longitude, geolocation.heading, geolocation.speed]);
+
+  // Handle geolocation errors
+  useEffect(() => {
+    if (geolocation.error && isOnline) {
+      toast({
+        title: "Location access required",
+        description: geolocation.error,
+        variant: "destructive"
+      });
+    }
+  }, [geolocation.error, isOnline, toast]);
+
   const handleToggleOnline = () => {
-    setIsOnline(!isOnline);
+    const newStatus = !isOnline;
+    setIsOnline(newStatus);
+    toggleOnlineMutation.mutate(newStatus);
   };
 
   const handleViewEarnings = () => {
@@ -98,24 +198,70 @@ export default function DriverDashboard() {
 
       <Map
         showDriverMarkers
-        currentLocation={{ lat: 28.6139, lng: 77.2090 }}
+        currentLocation={
+          geolocation.latitude && geolocation.longitude
+            ? { lat: geolocation.latitude, lng: geolocation.longitude }
+            : { lat: 28.6139, lng: 77.2090 }
+        }
       />
 
       <BottomSheet>
         <div className="p-6 space-y-4">
+          {/* Location Status */}
+          {geolocation.error && isOnline && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <p className="text-sm text-red-800" data-testid="location-error">{geolocation.error}</p>
+              </div>
+            </div>
+          )}
+
+          {geolocation.accuracy && isOnline && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Navigation className={`h-4 w-4 text-blue-600 ${geolocation.isWatching ? 'animate-pulse' : ''}`} />
+                  <p className="text-sm text-blue-800" data-testid="location-accuracy">
+                    GPS accuracy: {Math.round(geolocation.accuracy)}m
+                  </p>
+                </div>
+                {geolocation.speed && (
+                  <p className="text-sm text-blue-800">
+                    Speed: {Math.round((geolocation.speed || 0) * 3.6)} km/h
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Online/Offline Toggle */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900" data-testid="online-status">
-                You're {isOnline ? "online" : "offline"}
-              </h2>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-xl font-semibold text-gray-900" data-testid="online-status">
+                  You're {isOnline ? "online" : "offline"}
+                </h2>
+                {isOnline ? (
+                  <Wifi className="h-5 w-5 text-green-600" />
+                ) : (
+                  <WifiOff className="h-5 w-5 text-gray-400" />
+                )}
+              </div>
               <p className="text-gray-500" data-testid="online-description">
                 {isOnline ? "Ready to accept rides" : "Go online to accept rides"}
               </p>
+              {isOnline && geolocation.latitude && geolocation.longitude && (
+                <p className="text-xs text-green-600 mt-1" data-testid="location-status">
+                  <MapPin className="h-3 w-3 inline mr-1" />
+                  Location tracking active
+                </p>
+              )}
             </div>
             <Button
               variant={isOnline ? "default" : "outline"}
               onClick={handleToggleOnline}
+              disabled={toggleOnlineMutation.isPending}
               className={`w-16 h-8 rounded-full transition-colors ${
                 isOnline 
                   ? "bg-driver-primary hover:bg-driver-primary/90" 
@@ -125,7 +271,7 @@ export default function DriverDashboard() {
             >
               <div className={`w-6 h-6 bg-white rounded-full transition-transform ${
                 isOnline ? "translate-x-2" : "-translate-x-2"
-              }`}></div>
+              } ${toggleOnlineMutation.isPending ? 'animate-pulse' : ''}`}></div>
             </Button>
           </div>
 
