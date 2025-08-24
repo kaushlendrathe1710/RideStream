@@ -6,11 +6,14 @@ import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Star, MapPin, Navigation, Wifi, WifiOff, AlertCircle, TrendingUp, Clock } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Star, MapPin, Navigation, Wifi, WifiOff, AlertCircle, TrendingUp, Clock, Bell, ArrowRight, Timer, DollarSign, Car, Activity, AlertTriangle } from "lucide-react";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useLocationSearch } from "@/hooks/use-location-search";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { calculateDistance } from "@/lib/mock-data";
 import type { RideWithDetails, Driver } from "@shared/schema";
 
 export default function DriverDashboard() {
@@ -52,16 +55,55 @@ export default function DriverDashboard() {
   });
   const locationSearch = useLocationSearch();
 
-  // Check for pending ride requests
-  const { data: pendingRides } = useQuery<RideWithDetails[]>({
-    queryKey: ['/api/ride-requests'],
+  // Check for driver-specific ride requests
+  const { data: pendingRides = [] } = useQuery<RideWithDetails[]>({
+    queryKey: ['/api/drivers', driverProfile?.id, 'ride-requests'],
     queryFn: async () => {
+      if (!driverProfile?.id || !geolocation.latitude || !geolocation.longitude) return [];
+      
+      // Get all pending ride requests
       const response = await fetch('/api/ride-requests');
-      return response.json();
+      const allRequests = await response.json();
+      
+      // Filter for driver's vehicle type and nearby requests
+      const nearbyRequests = allRequests.filter((ride: RideWithDetails) => {
+        if (ride.vehicleType !== driverProfile.vehicleType) return false;
+        
+        const distance = calculateDistance(
+          geolocation.latitude!,
+          geolocation.longitude!,
+          parseFloat(ride.pickupLat),
+          parseFloat(ride.pickupLng)
+        );
+        
+        return distance <= 10; // Within 10km
+      });
+      
+      return nearbyRequests;
     },
-    refetchInterval: isOnline ? 5000 : false,
-    enabled: !!driverProfile?.id,
+    refetchInterval: isOnline ? 3000 : false, // Check every 3 seconds when online
+    enabled: !!driverProfile?.id && !!geolocation.latitude && !!geolocation.longitude,
   });
+  
+  // Track previous ride requests to detect new ones
+  const [previousRequestCount, setPreviousRequestCount] = useState(0);
+  const [lastNotifiedRequest, setLastNotifiedRequest] = useState<string | null>(null);
+  
+  // Show notification for new ride requests
+  useEffect(() => {
+    if (pendingRides.length > previousRequestCount && pendingRides.length > 0) {
+      const newestRequest = pendingRides[0];
+      if (newestRequest.id !== lastNotifiedRequest) {
+        toast({
+          title: "🚗 New Ride Request!",
+          description: `Pickup: ${newestRequest.pickupAddress} - ₹${Math.round(parseFloat(newestRequest.fare || '0'))}`,
+          duration: 5000,
+        });
+        setLastNotifiedRequest(newestRequest.id);
+      }
+    }
+    setPreviousRequestCount(pendingRides.length);
+  }, [pendingRides, previousRequestCount, toast, lastNotifiedRequest]);
 
   // Check for active ride
   const { data: activeRide } = useQuery<RideWithDetails | null>({
@@ -141,15 +183,20 @@ export default function DriverDashboard() {
     }
   }, [activeRide, setLocation]);
 
-  // Show ride request if there's a pending one
-  useEffect(() => {
-    if (pendingRides && pendingRides.length > 0 && isOnline) {
-      setLocation(`/driver/ride-request/${pendingRides[0].id}`);
-    }
-  }, [pendingRides, isOnline, setLocation]);
+  // Disabled automatic navigation - let driver choose
+  // useEffect(() => {
+  //   if (pendingRides && pendingRides.length > 0 && isOnline) {
+  //     setLocation(`/driver/ride-request/${pendingRides[0].id}`);
+  //   }
+  // }, [pendingRides, isOnline, setLocation]);
 
   const handleModeSwitch = () => {
     setLocation("/rider");
+  };
+  
+  // Handle incoming ride request
+  const handleViewRideRequest = (rideId: string) => {
+    setLocation(`/driver/ride-request/${rideId}`);
   };
 
   // Real-time location updates when online
@@ -278,6 +325,53 @@ export default function DriverDashboard() {
 
       <BottomSheet>
         <div className="p-6 space-y-4">
+          {/* Ride Request Notifications */}
+          {isOnline && pendingRides.length > 0 && (
+            <Alert className="mb-4 border-orange-200 bg-orange-50">
+              <Bell className="h-4 w-4 text-orange-600" />
+              <AlertDescription className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-orange-800">
+                    {pendingRides.length} ride request{pendingRides.length > 1 ? 's' : ''} nearby!
+                  </p>
+                  <p className="text-sm text-orange-600">
+                    Closest pickup: {pendingRides[0]?.pickupAddress}
+                  </p>
+                </div>
+                <Button 
+                  size="sm" 
+                  onClick={() => handleViewRideRequest(pendingRides[0].id)}
+                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                >
+                  View
+                  <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* No Requests Message */}
+          {isOnline && pendingRides.length === 0 && (
+            <Alert className="mb-4 border-blue-200 bg-blue-50">
+              <Activity className="h-4 w-4 text-blue-600" />
+              <AlertDescription>
+                <p className="font-medium text-blue-800">You're online and ready!</p>
+                <p className="text-sm text-blue-600">Waiting for ride requests in your area...</p>
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {/* Offline Message */}
+          {!isOnline && (
+            <Alert className="mb-4 border-gray-200 bg-gray-50">
+              <AlertTriangle className="h-4 w-4 text-gray-600" />
+              <AlertDescription>
+                <p className="font-medium text-gray-800">You're offline</p>
+                <p className="text-sm text-gray-600">Turn on your status to receive ride requests</p>
+              </AlertDescription>
+            </Alert>
+          )}
+          
           {/* Location Status */}
           {geolocation.error && isOnline && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
