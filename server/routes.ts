@@ -38,6 +38,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/users/:id", async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const updateData = req.body;
+      
+      // Get existing user first
+      const existingUser = await storage.getUser(userId);
+      if (!existingUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Update user with new data
+      const updatedUser = await storage.updateUser(userId, updateData);
+      res.json(updatedUser);
+    } catch (error) {
+      res.status(500).json({ message: "Error updating user", error });
+    }
+  });
+
   // Auth routes
   app.post("/api/auth/send-otp", async (req, res) => {
     try {
