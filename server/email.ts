@@ -32,11 +32,12 @@ class EmailService {
     console.log(`📮 SMTP Host: ${process.env.SMTP_HOST}`);
     console.log(`👤 SMTP User: ${process.env.SMTP_USER}`);
 
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+    // Try port 465 with SSL for Hostinger
+    const smtpPort = parseInt(process.env.SMTP_PORT || '465');
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: smtpPort,
-      secure: smtpPort === 465, // true for 465 (SSL), false for 587 (TLS)
+      secure: true, // Always use SSL for Hostinger
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -44,9 +45,9 @@ class EmailService {
       // Hostinger-specific settings
       tls: {
         rejectUnauthorized: false,
-        ciphers: 'SSLv3'
+        servername: process.env.SMTP_HOST
       },
-      requireTLS: smtpPort === 587,
+      debug: false, // Disable for cleaner logs
       connectionTimeout: 60000,
       greetingTimeout: 30000,
       socketTimeout: 60000
