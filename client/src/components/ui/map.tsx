@@ -6,6 +6,19 @@ interface MapProps {
   currentLocation?: { lat: number; lng: number };
   pickupLocation?: { lat: number; lng: number };
   dropoffLocation?: { lat: number; lng: number };
+  driverLocation?: {
+    lat: number;
+    lng: number;
+    heading?: number;
+    speed?: number;
+  };
+  riderLocation?: {
+    lat: number;
+    lng: number;
+  };
+  showRoute?: boolean;
+  showProgress?: number;
+  routePolyline?: string;
 }
 
 export function Map({ 
@@ -13,7 +26,12 @@ export function Map({
   showDriverMarkers = false,
   currentLocation,
   pickupLocation,
-  dropoffLocation
+  dropoffLocation,
+  driverLocation,
+  riderLocation,
+  showRoute = false,
+  showProgress = 0,
+  routePolyline
 }: MapProps) {
   return (
     <div className={cn("relative h-80 bg-gray-100 overflow-hidden", className)}>
@@ -39,6 +57,53 @@ export function Map({
         {dropoffLocation && (
           <div className="absolute bottom-16 right-1/3 transform translate-x-1/2">
             <div className="w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-lg" data-testid="dropoff-location-marker"></div>
+          </div>
+        )}
+        
+        {/* Driver location marker */}
+        {driverLocation && (
+          <div className="absolute top-24 left-1/4 transform -translate-x-1/2">
+            <div className="w-5 h-5 bg-driver-primary rounded-full border-2 border-white shadow-lg" data-testid="driver-location-marker"></div>
+            {driverLocation.heading && (
+              <div 
+                className="absolute top-1/2 left-1/2 w-3 h-3 bg-driver-primary transform -translate-x-1/2 -translate-y-1/2 rotate-45"
+                style={{ transform: `translate(-50%, -50%) rotate(${driverLocation.heading}deg)` }}
+              />
+            )}
+          </div>
+        )}
+        
+        {/* Rider location marker */}
+        {riderLocation && (
+          <div className="absolute top-28 right-1/4 transform translate-x-1/2">
+            <div className="w-4 h-4 bg-rider-primary rounded-full border-2 border-white shadow-lg" data-testid="rider-location-marker"></div>
+          </div>
+        )}
+        
+        {/* Route visualization */}
+        {showRoute && (
+          <div className="absolute inset-4">
+            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <path
+                d="M20,30 Q40,10 60,30 T80,60"
+                stroke="#3B82F6"
+                strokeWidth="2"
+                fill="none"
+                strokeDasharray="5,5"
+                className="animate-pulse"
+                data-testid="route-path"
+              />
+            </svg>
+            {showProgress > 0 && (
+              <div 
+                className="absolute top-0 left-0 w-2 h-2 bg-blue-600 rounded-full transform -translate-x-1/2 -translate-y-1/2 transition-all duration-1000"
+                style={{ 
+                  left: `${Math.min(showProgress, 100)}%`,
+                  top: `${30 + Math.sin(showProgress * 0.02) * 20}%`
+                }}
+                data-testid="progress-indicator"
+              />
+            )}
           </div>
         )}
         

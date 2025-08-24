@@ -5,9 +5,13 @@ import { Header } from "@/components/layout/header";
 import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
-import { Phone, MessageCircle, Star, Download, Shield } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
+import { Phone, MessageCircle, Star, Download, Shield, MapPin, Navigation, Clock, Car, Route } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useGeolocation } from "@/hooks/use-geolocation";
 import type { RideWithDetails } from "@shared/schema";
 
 export default function RiderTrip() {
@@ -15,6 +19,9 @@ export default function RiderTrip() {
   const [, setLocation] = useLocation();
   const [rating, setRating] = useState(0);
   const { toast } = useToast();
+  const geolocation = useGeolocation({ watch: true });
+  const [tripProgress, setTripProgress] = useState(0);
+  const [estimatedArrival, setEstimatedArrival] = useState<string | null>(null);
 
   const { data: ride, isLoading } = useQuery<RideWithDetails>({
     queryKey: ['/api/rides', rideId],
@@ -22,8 +29,46 @@ export default function RiderTrip() {
       const response = await fetch(`/api/rides/${rideId}`);
       return response.json();
     },
-    refetchInterval: 5000,
+    refetchInterval: 3000, // More frequent updates for live tracking
   });
+
+  // Fetch real-time tracking data
+  const { data: trackingData } = useQuery({
+    queryKey: ['/api/rides', rideId, 'tracking'],
+    queryFn: async () => {
+      const response = await fetch(`/api/rides/${rideId}/tracking`);
+      return response.json();
+    },
+    refetchInterval: 2000,
+    enabled: !!ride && (ride.status === 'driver_assigned' || ride.status === 'in_progress'),
+  });
+
+  // Update rider location when available
+  useEffect(() => {
+    if (geolocation.latitude && geolocation.longitude && rideId && ride?.status === 'in_progress') {
+      fetch(`/api/rides/${rideId}/location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: geolocation.latitude,
+          lng: geolocation.longitude,
+          userType: 'rider',
+          timestamp: Date.now()
+        })
+      }).catch(() => {}); // Silent fail for location updates
+    }
+  }, [geolocation.latitude, geolocation.longitude, rideId, ride?.status]);
+
+  // Update trip progress based on tracking data
+  useEffect(() => {
+    if (trackingData) {
+      setTripProgress(trackingData.routeProgress || 0);
+      if (trackingData.estimatedArrival) {
+        const eta = new Date(trackingData.estimatedArrival);
+        setEstimatedArrival(eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      }
+    }
+  }, [trackingData]);
 
   const cancelRideMutation = useMutation({
     mutationFn: async () => {
@@ -115,7 +160,17 @@ export default function RiderTrip() {
           <div className="p-6 space-y-4">
             <div className="text-center mb-6">
               <h2 className="text-xl font-semibold text-gray-900" data-testid="driver-arriving-title">Driver on the way</h2>
-              <p className="text-gray-500" data-testid="driver-eta">Arriving in 3 min</p>
+              <p className="text-gray-500" data-testid="driver-eta">
+                {trackingData?.estimatedArrival 
+                  ? `Arriving at ${new Date(trackingData.estimatedArrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Calculating arrival time...'}
+              </p>
+              {trackingData?.driverLocation && (
+                <div className="flex items-center justify-center space-x-2 mt-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm text-green-600">Driver location updated</span>
+                </div>
+              )}
             </div>
 
             {/* Driver Info Card */}
@@ -205,9 +260,13 @@ export default function RiderTrip() {
         />
 
         <Map
-          currentLocation={{ lat: parseFloat(ride.pickupLat), lng: parseFloat(ride.pickupLng) }}
+          currentLocation={trackingData?.driverLocation || { lat: parseFloat(ride.pickupLat), lng: parseFloat(ride.pickupLng) }}
           pickupLocation={{ lat: parseFloat(ride.pickupLat), lng: parseFloat(ride.pickupLng) }}
           dropoffLocation={{ lat: parseFloat(ride.dropoffLat), lng: parseFloat(ride.dropoffLng) }}
+          driverLocation={trackingData?.driverLocation}
+          riderLocation={trackingData?.riderLocation}
+          showRoute={true}
+          showProgress={tripProgress}
         />
 
         <BottomSheet>
@@ -217,10 +276,42 @@ export default function RiderTrip() {
               <p className="text-gray-500" data-testid="estimated-arrival">Estimated arrival: {ride.duration} min</p>
             </div>
 
-            {/* Trip Progress Bar */}
-            <div className="bg-gray-200 rounded-full h-2 mb-6">
-              <div className="bg-rider-primary h-2 rounded-full w-1/3 transition-all duration-1000" data-testid="progress-bar"></div>
-            </div>
+            {/* Live Trip Progress */}
+            <Card className="mb-6">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-600">Trip Progress</span>
+                  <span className="text-sm text-gray-500">{Math.round(tripProgress)}%</span>
+                </div>
+                <Progress value={tripProgress} className="h-3 mb-3" data-testid="progress-bar" />
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-4 w-4 text-blue-500" />
+                    <span className="text-gray-600">ETA: {estimatedArrival || 'Calculating...'}</span>
+                  </div>
+                  {trackingData?.driverLocation && (
+                    <div className="flex items-center space-x-2">
+                      <Car className="h-4 w-4 text-green-500" />
+                      <span className="text-gray-600">Driver nearby</span>
+                    </div>
+                  )}
+                </div>
+                
+                {trackingData?.driverLocation && (
+                  <div className="mt-3 p-2 bg-blue-50 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm text-blue-800">
+                        Driver is {trackingData.driverLocation.speed ? 
+                          `moving at ${Math.round(trackingData.driverLocation.speed)} km/h` :
+                          'stationary'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Driver Info (Compact) */}
             <div className="flex items-center space-x-3 bg-gray-50 rounded-lg p-3">

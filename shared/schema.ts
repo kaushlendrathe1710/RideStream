@@ -53,6 +53,18 @@ export const rides = pgTable("rides", {
   distance: decimal("distance", { precision: 5, scale: 2 }),
   duration: integer("duration"), // in minutes
   otp: text("otp"),
+  
+  // Real-time location tracking
+  driverCurrentLat: decimal("driver_current_lat", { precision: 10, scale: 7 }),
+  driverCurrentLng: decimal("driver_current_lng", { precision: 10, scale: 7 }),
+  driverHeading: decimal("driver_heading", { precision: 5, scale: 2 }),
+  driverSpeed: decimal("driver_speed", { precision: 5, scale: 2 }),
+  driverLastUpdate: timestamp("driver_last_update"),
+  
+  riderCurrentLat: decimal("rider_current_lat", { precision: 10, scale: 7 }),
+  riderCurrentLng: decimal("rider_current_lng", { precision: 10, scale: 7 }),
+  riderLastUpdate: timestamp("rider_last_update"),
+  
   createdAt: timestamp("created_at").defaultNow(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),

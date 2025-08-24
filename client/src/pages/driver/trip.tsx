@@ -5,16 +5,28 @@ import { Header } from "@/components/layout/header";
 import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
-import { Phone, MessageCircle, Clock, Navigation } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Phone, MessageCircle, Clock, Navigation, MapPin, Route, Compass, Car, ArrowRight, AlertTriangle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useGeolocation } from "@/hooks/use-geolocation";
 import type { RideWithDetails } from "@shared/schema";
 
 export default function DriverTrip() {
   const { rideId } = useParams();
   const [, setLocation] = useLocation();
   const [waitingTime, setWaitingTime] = useState(0);
+  const [navigationData, setNavigationData] = useState<any>(null);
+  const [currentStep, setCurrentStep] = useState(0);
   const { toast } = useToast();
+  const geolocation = useGeolocation({ 
+    watch: true,
+    enableHighAccuracy: true,
+    timeout: 30000,
+    maximumAge: 5000
+  });
 
   const { data: ride, isLoading } = useQuery<RideWithDetails>({
     queryKey: ['/api/rides', rideId],
@@ -22,8 +34,55 @@ export default function DriverTrip() {
       const response = await fetch(`/api/rides/${rideId}`);
       return response.json();
     },
-    refetchInterval: 5000,
+    refetchInterval: 3000, // More frequent updates for drivers
   });
+
+  // Fetch navigation route
+  const { data: routeData } = useQuery({
+    queryKey: ['/api/navigation/route', ride?.pickupLat, ride?.dropoffLat],
+    queryFn: async () => {
+      if (!ride) return null;
+      const origin = { lat: geolocation.latitude || 28.6139, lng: geolocation.longitude || 77.2090 };
+      const destination = ride.status === 'driver_assigned' 
+        ? { lat: parseFloat(ride.pickupLat), lng: parseFloat(ride.pickupLng) }
+        : { lat: parseFloat(ride.dropoffLat), lng: parseFloat(ride.dropoffLng) };
+      
+      const response = await fetch('/api/navigation/route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination })
+      });
+      return response.json();
+    },
+    enabled: !!ride && !!geolocation.latitude,
+    refetchInterval: 30000 // Update route every 30 seconds
+  });
+
+  // Update driver location continuously
+  useEffect(() => {
+    if (geolocation.latitude && geolocation.longitude && rideId && ride) {
+      fetch(`/api/rides/${rideId}/location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: geolocation.latitude,
+          lng: geolocation.longitude,
+          heading: geolocation.heading,
+          speed: geolocation.speed,
+          userType: 'driver',
+          timestamp: Date.now()
+        })
+      }).catch(() => {}); // Silent fail for location updates
+    }
+  }, [geolocation.latitude, geolocation.longitude, geolocation.heading, geolocation.speed, rideId, ride]);
+
+  // Set navigation data from route
+  useEffect(() => {
+    if (routeData) {
+      setNavigationData(routeData);
+      setCurrentStep(0);
+    }
+  }, [routeData]);
 
   // Timer for waiting at pickup
   useEffect(() => {
@@ -149,16 +208,41 @@ export default function DriverTrip() {
         />
 
         <Map
-          currentLocation={{ lat: 28.6139, lng: 77.2090 }} // Driver location
+          currentLocation={geolocation.latitude && geolocation.longitude ? 
+            { lat: geolocation.latitude, lng: geolocation.longitude } :
+            { lat: 28.6139, lng: 77.2090 }
+          }
           pickupLocation={{ lat: parseFloat(ride.pickupLat), lng: parseFloat(ride.pickupLng) }}
           dropoffLocation={{ lat: parseFloat(ride.dropoffLat), lng: parseFloat(ride.dropoffLng) }}
+          driverLocation={geolocation.latitude && geolocation.longitude ? {
+            lat: geolocation.latitude,
+            lng: geolocation.longitude,
+            heading: geolocation.heading,
+            speed: geolocation.speed
+          } : undefined}
+          showRoute={true}
+          routePolyline={navigationData?.polyline}
         />
 
         <BottomSheet>
           <div className="p-6 space-y-4">
             <div className="text-center mb-6">
               <h2 className="text-xl font-semibold text-gray-900" data-testid="going-to-pickup-title">Going to pickup</h2>
-              <p className="text-gray-500" data-testid="pickup-eta">ETA: 4 min</p>
+              <p className="text-gray-500" data-testid="pickup-eta">
+                ETA: {navigationData?.duration?.text || 'Calculating...'}
+              </p>
+              <div className="flex items-center justify-center space-x-4 mt-2">
+                <Badge variant="outline" className="text-blue-600">
+                  <Route className="h-3 w-3 mr-1" />
+                  {navigationData?.distance?.text || 'Loading...'}
+                </Badge>
+                {geolocation.speed && (
+                  <Badge variant="outline" className="text-green-600">
+                    <Car className="h-3 w-3 mr-1" />
+                    {Math.round(geolocation.speed)} km/h
+                  </Badge>
+                )}
+              </div>
             </div>
 
             {/* Customer Info */}
@@ -194,13 +278,71 @@ export default function DriverTrip() {
               </div>
             </div>
 
-            {/* Navigation Info */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center space-x-2">
-                <Navigation className="w-4 h-4 text-blue-600" />
-                <p className="text-sm text-blue-800" data-testid="navigation-instruction">Follow GPS navigation to reach pickup location</p>
-              </div>
-            </div>
+            {/* Turn-by-Turn Navigation */}
+            {navigationData?.steps && (
+              <Card className="mb-4">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center space-x-2">
+                    <Compass className="h-4 w-4 text-blue-600" />
+                    <span>Navigation</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {navigationData.steps.slice(currentStep, currentStep + 2).map((step: any, index: number) => (
+                    <div key={index} className={`p-3 rounded-lg border ${
+                      index === 0 ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                          index === 0 ? 'bg-blue-600 text-white' : 'bg-gray-400 text-white'
+                        }`}>
+                          {step.maneuver === 'turn-left' ? '↰' : 
+                           step.maneuver === 'turn-right' ? '↱' : 
+                           step.maneuver === 'straight' ? '↑' : '→'}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`font-medium ${
+                            index === 0 ? 'text-blue-900' : 'text-gray-700'
+                          }`}>
+                            {step.instruction}
+                          </p>
+                          <p className={`text-sm ${
+                            index === 0 ? 'text-blue-600' : 'text-gray-500'
+                          }`}>
+                            {step.distance} • {step.duration}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {navigationData.steps.length > 2 && (
+                    <div className="text-center">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setCurrentStep(Math.min(currentStep + 1, navigationData.steps.length - 2))}
+                        disabled={currentStep >= navigationData.steps.length - 2}
+                      >
+                        Next Steps <ArrowRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Location Status */}
+            <Alert className="mb-4">
+              <MapPin className="h-4 w-4" />
+              <AlertDescription>
+                {geolocation.latitude ? (
+                  <>GPS connected • Accuracy: {geolocation.accuracy ? Math.round(geolocation.accuracy) : 'Unknown'}m</>
+                ) : (
+                  <>GPS locating... Please ensure location is enabled</>
+                )}
+              </AlertDescription>
+            </Alert>
 
             {/* Arrived Button */}
             <Button
