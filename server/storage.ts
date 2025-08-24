@@ -1,7 +1,7 @@
 import { type User, type InsertUser, type Driver, type InsertDriver, type Ride, type InsertRide, type DriverWithUser, type RideWithDetails, type OtpCode, type InsertOtp, users, drivers, rides, otpCodes } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -682,10 +682,16 @@ export class DatabaseStorage implements IStorage {
     const [otp] = await db
       .select()
       .from(otpCodes)
-      .where(eq(otpCodes.email, email));
+      .where(
+        and(
+          eq(otpCodes.email, email),
+          eq(otpCodes.code, code),
+          eq(otpCodes.verified, false)
+        )
+      );
     
-    // Check if OTP matches and is not expired
-    if (otp && otp.code === code && !otp.verified && new Date() <= otp.expiresAt) {
+    // Check if OTP is not expired
+    if (otp && new Date() <= otp.expiresAt) {
       return otp;
     }
     

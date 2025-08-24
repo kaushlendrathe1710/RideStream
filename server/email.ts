@@ -41,10 +41,15 @@ class EmailService {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
-      // Additional settings for better compatibility
+      // Hostinger-specific settings
       tls: {
-        rejectUnauthorized: false // Accept self-signed certificates
-      }
+        rejectUnauthorized: false,
+        ciphers: 'SSLv3'
+      },
+      requireTLS: smtpPort === 587,
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000
     });
   }
 
