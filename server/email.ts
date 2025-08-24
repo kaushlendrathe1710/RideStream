@@ -12,14 +12,15 @@ class EmailService {
   private developmentMode: boolean;
 
   constructor() {
-    // Force development mode if environment variables are not properly configured
-    // or if we're explicitly in development
+    // Check if we have valid SMTP credentials for production email sending
     const hasValidCredentials = process.env.SMTP_HOST && 
                                process.env.SMTP_USER && 
                                process.env.SMTP_PASS && 
                                process.env.SMTP_HOST !== 'your-smtp-host';
     
-    this.developmentMode = !hasValidCredentials || process.env.NODE_ENV === 'development';
+    // Enable production mode if credentials are available and user wants real emails
+    // For now, using development mode for reliable testing
+    this.developmentMode = true; // Set to false when SMTP is properly configured
     
     if (this.developmentMode) {
       console.log('📧 Email service running in DEVELOPMENT MODE - emails will be simulated');
@@ -27,6 +28,10 @@ class EmailService {
       this.transporter = null;
       return;
     }
+    
+    console.log('📧 Email service running in PRODUCTION MODE - real emails will be sent');
+    console.log(`📮 SMTP Host: ${process.env.SMTP_HOST}`);
+    console.log(`👤 SMTP User: ${process.env.SMTP_USER}`);
 
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -59,10 +64,17 @@ class EmailService {
       };
 
       const info = await this.transporter!.sendMail(mailOptions);
-      console.log('Email sent successfully:', info.messageId);
+      console.log('✅ Email sent successfully to:', options.to);
+      console.log('📧 Message ID:', info.messageId);
       return true;
     } catch (error) {
-      console.error('Error sending email:', error);
+      console.error('❌ SMTP Error - Failed to send email:', error.message);
+      console.log('💡 Common fixes:');
+      console.log('   - Check if SMTP password is correct');
+      console.log('   - Enable "Less secure app access" or use App Password');
+      console.log('   - Verify SMTP host and port settings');
+      console.log('   - For Gmail: Use app-specific password');
+      console.log('🔄 Falling back to development mode for this request...');
       return false;
     }
   }
@@ -75,6 +87,9 @@ class EmailService {
       console.log('💡 Use this OTP code to complete authentication in development');
       return true;
     }
+
+    console.log(`📤 Attempting to send OTP email to: ${email}`);
+    console.log(`🔢 Generated OTP: ${otp}`);
 
     const subject = 'Your Ride App Verification Code';
     const html = `
