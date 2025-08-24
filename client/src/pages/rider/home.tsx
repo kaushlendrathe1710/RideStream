@@ -1,24 +1,55 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Header } from "@/components/layout/header";
 import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Home, Briefcase, MapPin, Navigation } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Home, Briefcase, MapPin, Navigation, Clock, Star, History } from "lucide-react";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useLocationSearch } from "@/hooks/use-location-search";
 import { useToast } from "@/hooks/use-toast";
+import type { RideWithDetails } from "@shared/schema";
 
 export default function RiderHome() {
   const [, setLocation] = useLocation();
   const [pickupAddress, setPickupAddress] = useState("Current Location");
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [showLocationSearch, setShowLocationSearch] = useState(false);
+  const [showRecentRides, setShowRecentRides] = useState(false);
   const { toast } = useToast();
+  
+  // Get current user from localStorage
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
   
   const geolocation = useGeolocation();
   const locationSearch = useLocationSearch();
+
+  // Fetch user's ride history
+  const { data: rideHistory = [] } = useQuery<RideWithDetails[]>({
+    queryKey: ['/api/riders', user?.id, 'rides'],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const response = await fetch(`/api/riders/${user.id}/rides`);
+      return response.json();
+    },
+    enabled: !!user?.id,
+  });
+
+  // Check for active ride
+  const { data: activeRide } = useQuery<RideWithDetails | null>({
+    queryKey: ['/api/riders', user?.id, 'active-ride'],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const response = await fetch(`/api/riders/${user.id}/active-ride`);
+      return response.json();
+    },
+    enabled: !!user?.id,
+    refetchInterval: 5000,
+  });
 
   useEffect(() => {
     if (geolocation.latitude && geolocation.longitude && pickupAddress === "Current Location") {
@@ -28,6 +59,13 @@ export default function RiderHome() {
         .catch(() => setPickupAddress(`${geolocation.latitude.toFixed(4)}, ${geolocation.longitude.toFixed(4)}`));
     }
   }, [geolocation.latitude, geolocation.longitude, pickupAddress, locationSearch]);
+
+  // Redirect to active ride if exists
+  useEffect(() => {
+    if (activeRide && ['searching', 'driver_assigned', 'driver_arrived', 'in_progress'].includes(activeRide.status)) {
+      setLocation(`/rider/trip/${activeRide.id}`);
+    }
+  }, [activeRide, setLocation]);
 
   const handleModeSwitch = () => {
     setLocation("/driver");
@@ -62,10 +100,41 @@ export default function RiderHome() {
     await locationSearch.searchLocations(query);
   };
 
+  const toggleRecentRides = () => {
+    setShowRecentRides(!showRecentRides);
+    setShowLocationSearch(false);
+  };
+
+  const handleRideHistory = () => {
+    setLocation('/rider/history');
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500';
+      case 'cancelled': return 'bg-red-500';
+      case 'in_progress': return 'bg-blue-500';
+      case 'searching': return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'completed': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      case 'in_progress': return 'In Progress';
+      case 'searching': return 'Searching';
+      case 'driver_assigned': return 'Driver Assigned';
+      case 'driver_arrived': return 'Driver Arrived';
+      default: return status;
+    }
+  };
+
   return (
     <>
       <Header
-        title="Book a Ride"
+        title={user?.name ? `Hi, ${user.name.split(' ')[0]}!` : "Book a Ride"}
         mode="rider"
         onModeSwitch={handleModeSwitch}
       />
@@ -80,17 +149,48 @@ export default function RiderHome() {
 
       <BottomSheet>
         <div className="p-6 space-y-4">
+          {/* Active Ride Alert */}
+          {activeRide && (
+            <Card className="border-blue-200 bg-blue-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-blue-900">You have an active ride</p>
+                  <p className="text-sm text-blue-700">{activeRide.pickupAddress} → {activeRide.dropoffAddress}</p>
+                </div>
+                <Badge className={getStatusColor(activeRide.status)}>
+                  {getStatusText(activeRide.status)}
+                </Badge>
+              </div>
+              <Button 
+                className="w-full mt-3 bg-blue-600 hover:bg-blue-700"
+                onClick={() => setLocation(`/rider/trip/${activeRide.id}`)}
+              >
+                View Trip Details
+              </Button>
+            </Card>
+          )}
+
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900" data-testid="where-to-title">Where to?</h2>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleGetCurrentLocation}
-              disabled={geolocation.loading}
-              data-testid="get-location-button"
-            >
-              <Navigation className={`h-4 w-4 ${geolocation.loading ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleRecentRides}
+                data-testid="recent-rides-button"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleGetCurrentLocation}
+                disabled={geolocation.loading}
+                data-testid="get-location-button"
+              >
+                <Navigation className={`h-4 w-4 ${geolocation.loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </div>
           
           {/* Location Status */}
@@ -171,8 +271,55 @@ export default function RiderHome() {
             </div>
           )}
 
+          {/* Recent Rides */}
+          {showRecentRides && rideHistory.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-600" data-testid="recent-rides-title">Recent rides</h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={handleRideHistory}
+                  className="text-xs text-rider-primary"
+                >
+                  View all
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {rideHistory.slice(0, 5).map((ride) => (
+                  <Button
+                    key={ride.id}
+                    variant="ghost"
+                    className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg h-auto"
+                    onClick={() => {
+                      setDropoffAddress(ride.dropoffAddress);
+                      setShowRecentRides(false);
+                    }}
+                    data-testid={`recent-ride-${ride.id}`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <div className="text-left">
+                        <p className="font-medium text-gray-900 text-sm">{ride.dropoffAddress}</p>
+                        <p className="text-xs text-gray-500">{ride.pickupAddress}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <Badge className={`text-xs ${getStatusColor(ride.status)}`}>
+                        {getStatusText(ride.status)}
+                      </Badge>
+                      {ride.fare && (
+                        <p className="text-xs text-gray-600 mt-1">₹{ride.fare}</p>
+                      )}
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Quick Locations */}
-          {!showLocationSearch && (
+          {!showLocationSearch && !showRecentRides && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-gray-600" data-testid="recent-destinations-title">Saved destinations</h3>
               <div className="space-y-2">

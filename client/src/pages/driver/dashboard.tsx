@@ -5,12 +5,13 @@ import { Header } from "@/components/layout/header";
 import { BottomSheet } from "@/components/layout/bottom-sheet";
 import { Map } from "@/components/ui/map";
 import { Button } from "@/components/ui/button";
-import { Star, MapPin, Navigation, Wifi, WifiOff, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Star, MapPin, Navigation, Wifi, WifiOff, AlertCircle, TrendingUp, Clock } from "lucide-react";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useLocationSearch } from "@/hooks/use-location-search";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { RideWithDetails } from "@shared/schema";
+import type { RideWithDetails, Driver } from "@shared/schema";
 
 export default function DriverDashboard() {
   const [, setLocation] = useLocation();
@@ -18,6 +19,29 @@ export default function DriverDashboard() {
   const [locationUpdateInterval, setLocationUpdateInterval] = useState<NodeJS.Timeout | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  
+  // Get current user from localStorage
+  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!user) {
+      setLocation('/login');
+      return;
+    }
+  }, [user, setLocation]);
+
+  // Get driver profile for current user
+  const { data: driverProfile } = useQuery<Driver>({
+    queryKey: ['/api/drivers/user', user?.id],
+    queryFn: async () => {
+      if (!user?.id) throw new Error('No user ID');
+      const response = await fetch(`/api/drivers/user/${user.id}`);
+      if (!response.ok) throw new Error('Driver not found');
+      return response.json();
+    },
+    enabled: !!user?.id,
+  });
 
   // Enhanced geolocation tracking for drivers
   const geolocation = useGeolocation({ 
@@ -36,22 +60,37 @@ export default function DriverDashboard() {
       return response.json();
     },
     refetchInterval: isOnline ? 5000 : false,
+    enabled: !!driverProfile?.id,
   });
 
   // Check for active ride
   const { data: activeRide } = useQuery<RideWithDetails | null>({
-    queryKey: ['/api/drivers/driver-1/active-ride'],
+    queryKey: ['/api/drivers', driverProfile?.id, 'active-ride'],
     queryFn: async () => {
-      const response = await fetch('/api/drivers/driver-1/active-ride');
+      if (!driverProfile?.id) return null;
+      const response = await fetch(`/api/drivers/${driverProfile.id}/active-ride`);
       return response.json();
     },
     refetchInterval: 3000,
+    enabled: !!driverProfile?.id,
+  });
+
+  // Fetch driver's ride history
+  const { data: rideHistory = [] } = useQuery<RideWithDetails[]>({
+    queryKey: ['/api/drivers', driverProfile?.id, 'rides'],
+    queryFn: async () => {
+      if (!driverProfile?.id) return [];
+      const response = await fetch(`/api/drivers/${driverProfile.id}/rides`);
+      return response.json();
+    },
+    enabled: !!driverProfile?.id,
   });
 
   // Update driver location mutation
   const updateLocationMutation = useMutation({
     mutationFn: async (locationData: { lat: number; lng: number; heading?: number; speed?: number }) => {
-      return apiRequest('/api/drivers/driver-1', 'PUT', {
+      if (!driverProfile?.id) throw new Error('No driver profile');
+      return apiRequest(`/api/drivers/${driverProfile.id}`, 'PATCH', {
         currentLat: locationData.lat.toString(),
         currentLng: locationData.lng.toString(),
         isOnline: isOnline
@@ -68,7 +107,8 @@ export default function DriverDashboard() {
   // Toggle online status mutation
   const toggleOnlineMutation = useMutation({
     mutationFn: async (online: boolean) => {
-      return apiRequest('/api/drivers/driver-1', 'PUT', {
+      if (!driverProfile?.id) throw new Error('No driver profile');
+      return apiRequest(`/api/drivers/${driverProfile.id}`, 'PATCH', {
         isOnline: online,
         ...(geolocation.latitude && geolocation.longitude && {
           currentLat: geolocation.latitude.toString(),
@@ -78,6 +118,7 @@ export default function DriverDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/drivers/user', user?.id] });
       toast({
         title: isOnline ? "You're offline" : "You're online",
         description: isOnline ? "You won't receive ride requests" : "You can now receive ride requests"
@@ -155,43 +196,73 @@ export default function DriverDashboard() {
   };
 
   const handleViewEarnings = () => {
-    // Navigate to earnings page (not implemented)
+    setLocation('/driver/earnings');
   };
 
-  // Mock stats data
+  // Calculate real stats from ride history
+  const todayRides = rideHistory.filter(ride => {
+    const today = new Date().toDateString();
+    return new Date(ride.createdAt).toDateString() === today;
+  });
+
+  const completedTodayRides = todayRides.filter(ride => ride.status === 'completed');
+  const totalEarningsToday = completedTodayRides.reduce((sum, ride) => {
+    return sum + (parseFloat(ride.fare || '0'));
+  }, 0);
+
   const stats = {
-    trips: 8,
-    hours: "6.2h",
-    earnings: "₹1,247"
+    trips: completedTodayRides.length,
+    hours: `${Math.max(1, Math.floor(completedTodayRides.length * 0.75))}h`, // Estimate based on trips
+    earnings: `₹${totalEarningsToday.toFixed(0)}`
   };
 
-  const recentTrips = [
-    {
-      id: "1",
-      from: "Downtown",
-      to: "Airport",
-      distance: "12.4 km",
-      duration: "35 min",
-      timeAgo: "2 hours ago",
-      fare: "₹186",
-      rating: 5.0
-    },
-    {
-      id: "2",
-      from: "Mall",
-      to: "Home",
-      distance: "8.2 km",
-      duration: "22 min",
-      timeAgo: "3 hours ago",
-      fare: "₹124",
-      rating: 4.8
+  // Use real recent trips from API
+  const recentTrips = rideHistory.slice(0, 3).map(ride => ({
+    id: ride.id,
+    from: ride.pickupAddress.split(',')[0],
+    to: ride.dropoffAddress.split(',')[0],
+    distance: ride.distance ? `${ride.distance} km` : 'N/A',
+    duration: ride.duration ? `${ride.duration} min` : 'N/A',
+    timeAgo: getTimeAgo(ride.createdAt),
+    fare: ride.fare ? `₹${ride.fare}` : 'N/A',
+    rating: 4.8 // Mock rating for now
+  }));
+
+  function getTimeAgo(dateString: string) {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffHours < 1) return 'Just now';
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  }
+
+  // Update online status from driver profile
+  useEffect(() => {
+    if (driverProfile) {
+      setIsOnline(driverProfile.isOnline || false);
     }
-  ];
+  }, [driverProfile]);
+
+  // Don't render if no driver profile yet
+  if (!user || !driverProfile) {
+    return (
+      <div className="max-w-md mx-auto bg-white shadow-xl min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-driver-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading driver profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       <Header
-        title="Driver Dashboard"
+        title={`Hi, ${user.name?.split(' ')[0] || 'Driver'}!`}
         mode="driver"
         onModeSwitch={handleModeSwitch}
       />
@@ -275,11 +346,29 @@ export default function DriverDashboard() {
             </Button>
           </div>
 
+          {/* Driver Profile Summary */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-gray-900">{driverProfile.vehicleModel}</p>
+                <p className="text-sm text-gray-600">{driverProfile.vehicleNumber}</p>
+                <p className="text-xs text-gray-500 capitalize">{driverProfile.vehicleType}</p>
+              </div>
+              <div className="text-right">
+                <div className="flex items-center">
+                  <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                  <span className="text-sm font-medium ml-1">{user.rating || '5.0'}</span>
+                </div>
+                <p className="text-xs text-gray-500">{user.totalTrips || 0} total trips</p>
+              </div>
+            </div>
+          </div>
+
           {/* Today's Stats */}
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-gray-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-gray-900" data-testid="stats-trips">{stats.trips}</p>
-              <p className="text-sm text-gray-600">Trips</p>
+              <p className="text-sm text-gray-600">Today's Trips</p>
             </div>
             <div className="bg-gray-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-gray-900" data-testid="stats-hours">{stats.hours}</p>
@@ -287,7 +376,7 @@ export default function DriverDashboard() {
             </div>
             <div className="bg-gray-50 rounded-lg p-4 text-center">
               <p className="text-2xl font-bold text-driver-primary" data-testid="stats-earnings">{stats.earnings}</p>
-              <p className="text-sm text-gray-600">Earned</p>
+              <p className="text-sm text-gray-600">Today's Earned</p>
             </div>
           </div>
 
