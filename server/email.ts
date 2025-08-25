@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer from "nodemailer";
 
 interface EmailOptions {
   to: string;
@@ -13,32 +13,37 @@ class EmailService {
 
   constructor() {
     // Check if we have valid SMTP credentials for production email sending
-    const hasValidCredentials = process.env.SMTP_HOST && 
-                               process.env.SMTP_USER && 
-                               process.env.SMTP_PASS && 
-                               process.env.SMTP_HOST !== 'your-smtp-host';
-    
+    const hasValidCredentials =
+      process.env.SMTP_HOST &&
+      process.env.SMTP_USER &&
+      process.env.SMTP_PASS &&
+      process.env.SMTP_HOST !== "your-smtp-host";
+
     // Enable production mode if credentials are available and user wants real emails
     this.developmentMode = !hasValidCredentials;
-    
+
     if (this.developmentMode) {
-      console.log('📧 Email service running in DEVELOPMENT MODE - emails will be simulated');
-      console.log('💡 OTP codes will be logged to console for testing');
+      console.log(
+        "📧 Email service running in DEVELOPMENT MODE - emails will be simulated"
+      );
+      console.log("💡 OTP codes will be logged to console for testing");
       this.transporter = null;
       return;
     }
-    
-    console.log('📧 Email service running in PRODUCTION MODE - real emails will be sent');
+
+    console.log(
+      "📧 Email service running in PRODUCTION MODE - real emails will be sent"
+    );
     console.log(`📮 SMTP Host: ${process.env.SMTP_HOST}`);
     console.log(`👤 SMTP User: ${process.env.SMTP_USER}`);
 
-    // Try port 465 with SSL for Hostinger
-    const smtpPort = parseInt(process.env.SMTP_PORT || '465');
-    this.transporter = nodemailer.createTransport({
+    // Hostinger supports 587 (STARTTLS) and 465 (SSL). Default to 587.
+    const smtpPort = parseInt(process.env.SMTP_PORT || "587");
+    const useSsl = smtpPort === 465;
+    const baseOptions: any = {
       host: process.env.SMTP_HOST,
       port: smtpPort,
-      secure: false, // Use STARTTLS for port 587
-      requireTLS: true, // Force STARTTLS for port 587
+      secure: useSsl, // true for 465 (SSL), false for 587 (STARTTLS)
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -46,23 +51,41 @@ class EmailService {
       // Hostinger-specific settings
       tls: {
         rejectUnauthorized: false,
-        servername: process.env.SMTP_HOST
+        servername: process.env.SMTP_HOST,
       },
-      debug: false, // Disable for cleaner logs
+      debug: false,
+      logger: false,
       connectionTimeout: 60000,
       greetingTimeout: 30000,
-      socketTimeout: 60000
-    });
+      socketTimeout: 60000,
+    };
+
+    if (!useSsl) {
+      // For 587, STARTTLS is used
+      baseOptions.requireTLS = true;
+    }
+
+    this.transporter = nodemailer.createTransport(baseOptions);
+
+    // Optional: verify connection on startup for clearer diagnostics
+    this.transporter
+      .verify()
+      .then(() => {
+        console.log("✅ SMTP connection verified");
+      })
+      .catch((err) => {
+        console.warn("⚠️  SMTP verify failed:", err?.message || err);
+      });
   }
 
   async sendEmail(options: EmailOptions): Promise<boolean> {
     try {
       if (this.developmentMode) {
-        console.log('🎭 DEVELOPMENT MODE - Simulating email send:');
+        console.log("🎭 DEVELOPMENT MODE - Simulating email send:");
         console.log(`📧 To: ${options.to}`);
         console.log(`📝 Subject: ${options.subject}`);
         if (options.text) console.log(`📄 Text: ${options.text}`);
-        console.log('✅ Email simulation completed successfully');
+        console.log("✅ Email simulation completed successfully");
         return true;
       }
 
@@ -75,34 +98,37 @@ class EmailService {
       };
 
       const info = await this.transporter!.sendMail(mailOptions);
-      console.log('✅ Email sent successfully to:', options.to);
-      console.log('📧 Message ID:', info.messageId);
+      console.log("✅ Email sent successfully to:", options.to);
+      console.log("📧 Message ID:", info.messageId);
       return true;
     } catch (error) {
-      console.error('❌ SMTP Error - Failed to send email:', error.message);
-      console.log('💡 Common fixes:');
-      console.log('   - Check if SMTP password is correct');
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("❌ SMTP Error - Failed to send email:", msg);
+      console.log("💡 Common fixes:");
+      console.log("   - Check if SMTP password is correct");
       console.log('   - Enable "Less secure app access" or use App Password');
-      console.log('   - Verify SMTP host and port settings');
-      console.log('   - For Gmail: Use app-specific password');
-      console.log('🔄 Falling back to development mode for this request...');
+      console.log("   - Verify SMTP host and port settings");
+      console.log("   - For Gmail: Use app-specific password");
+      console.log("🔄 Falling back to development mode for this request...");
       return false;
     }
   }
 
   async sendOTP(email: string, otp: string): Promise<boolean> {
     if (this.developmentMode) {
-      console.log('🎭 DEVELOPMENT MODE - OTP Email Simulation:');
+      console.log("🎭 DEVELOPMENT MODE - OTP Email Simulation:");
       console.log(`📧 To: ${email}`);
       console.log(`🔢 OTP Code: ${otp}`);
-      console.log('💡 Use this OTP code to complete authentication in development');
+      console.log(
+        "💡 Use this OTP code to complete authentication in development"
+      );
       return true;
     }
 
     console.log(`📤 Attempting to send OTP email to: ${email}`);
     console.log(`🔢 Generated OTP: ${otp}`);
 
-    const subject = 'Your Ride App Verification Code';
+    const subject = "Your Ride App Verification Code";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
@@ -147,17 +173,21 @@ class EmailService {
       to: email,
       subject,
       text,
-      html
+      html,
     });
   }
 
   async testConnection(): Promise<boolean> {
     try {
+      if (!this.transporter) {
+        console.warn("SMTP transporter not initialized (development mode).");
+        return false;
+      }
       await this.transporter.verify();
-      console.log('SMTP server connection verified');
+      console.log("SMTP server connection verified");
       return true;
     } catch (error) {
-      console.error('SMTP server connection failed:', error);
+      console.error("SMTP server connection failed:", error);
       return false;
     }
   }
